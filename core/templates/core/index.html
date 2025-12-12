@@ -1,0 +1,67 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>SGEA - Home</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <header>
+        <div class="logo">SGEA 🎓</div>
+        <nav>
+            {% if user.is_authenticated %}
+                <span>Olá, {{ user.first_name }} | </span>
+                <a href="/admin/logout/" style="color: white;">Sair</a>
+            {% else %}
+                <a href="/admin/login/" class="btn">Entrar no Sistema</a>
+            {% endif %}
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <h1>Bem-vindo ao SGEA</h1>
+            <p>Sistema de Gestão de Eventos Acadêmicos. Gerencie seus eventos e certificados.</p>
+        </div>
+
+        {% if user.is_authenticated %}
+        <div class="card">
+            <h2>Meus Eventos e Certificados</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Evento</th>
+                        <th>Status</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inscricao in inscricoes %}
+                    <tr>
+                        <td>{{ inscricao.evento.nome }}</td>
+                        <td>
+                            {% if inscricao.presenca_confirmada %}
+                                <span style="color: green; font-weight: bold;">Presença Confirmada</span>
+                            {% else %}
+                                <span style="color: orange;">Aguardando Confirmação</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'baixar_certificado' inscricao.id %}" class="btn" target="_blank">
+                                📄 Certificado
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3">Você ainda não se inscreveu em nenhum evento.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

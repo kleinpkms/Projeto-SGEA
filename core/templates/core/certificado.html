@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Certificado de Participação</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; background-color: #f0f0f0; text-align: center; padding: 50px; }
+        .certificado {
+            border: 10px solid #003366;
+            padding: 50px;
+            background-color: white;
+            width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+        }
+        h1 { color: #003366; font-size: 48px; margin-bottom: 10px; }
+        h2 { color: #555; font-size: 24px; margin-top: 0; }
+        .texto { font-size: 20px; line-height: 1.6; margin: 40px 0; }
+        .destaque { font-weight: bold; color: #003366; font-size: 24px; }
+        .data { margin-top: 50px; font-size: 16px; color: #777; }
+        .assinatura { margin-top: 60px; border-top: 1px solid #333; width: 300px; margin-left: auto; margin-right: auto; }
+    </style>
+</head>
+<body>
+    <div class="certificado">
+        <h1>CERTIFICADO</h1>
+        <h2>SGEA - Sistema de Gestão de Eventos Acadêmicos</h2>
+        
+        <p class="texto">
+            Certificamos que <span class="destaque">{{ inscricao.participante.first_name }} {{ inscricao.participante.last_name }}</span><br>
+            participou com êxito do evento<br>
+            <span class="destaque">{{ inscricao.evento.nome }}</span>
+        </p>
+
+        <p class="texto">
+            Realizado em {{ inscricao.evento.local }}, com carga horária de 4 horas.
+        </p>
+
+        <div class="data">
+            Brasília, {{ data_atual|date:"d \d\e F \d\e Y" }}
+        </div>
+
+        <div class="assinatura">
+            <p>Coordenação Acadêmica</p>
+        </div>
+    </div>
+    
+    <script>
+        window.print();
+    </script>
+</body>
+</html>
