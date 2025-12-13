@@ -1,4 +1,3 @@
-
 import core.models
 import django.db.models.deletion
 from django.conf import settings
@@ -53,3 +52,4 @@ class Migration(migrations.Migration):
             },
         ),
     ]
+
