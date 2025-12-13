@@ -1,0 +1,119 @@
+{% extends 'core/admin_base.html' %}
+{% block content %}
+<div class="container">
+  <h2>Inscritos - {{ evento.nome }} <small style="font-weight:600;color:#666;margin-left:8px;">(<span id="inscritos-count">{{ inscritos|length }}</span>)</small></h2>
+  {% if can_generate_code %}
+    <div style="margin-bottom:10px; display:flex; gap:10px; align-items:center;">
+      <button id="generate-code" class="btn" style="background:#28a745;color:#fff;">Gerar código</button>
+      <div id="code-display" style="font-weight:700; color:#333;">{% if evento.confirmation_code %}Código atual: <span style="color:#000">{{ evento.confirmation_code }}</span>{% else %}Nenhum código gerado{% endif %}</div>
+    </div>
+  {% endif %}
+  <table class="table">
+    <thead><tr><th>Usuário</th><th>Confirmação</th><th>Data inscrição</th><th>Ações</th></tr></thead>
+    <tbody>
+    {% for ins in inscritos %}
+      <tr id="ins-{{ ins.id }}">
+        <td>{{ ins.participante.get_full_name|default:ins.participante.username }}</td>
+        <td style="text-align:center;">
+          <form class="confirm-form" method="post" action="{% url 'confirmar_presenca' %}" data-inscricao-id="{{ ins.id }}">
+            {% csrf_token %}
+            <input type="hidden" name="inscricao_id" value="{{ ins.id }}">
+            <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" class="confirm-checkbox" {% if ins.presenca_confirmada %}checked{% endif %}>
+              {% if ins.presenca_confirmada %}
+                <span class="confirm-label" style="color:#008c6e;font-weight:700;">Presença confirmada</span>
+              {% else %}
+                <span class="confirm-label" style="color:#ff8c00;font-weight:700;">Confirmação pendente</span>
+              {% endif %}
+            </label>
+          </form>
+        </td>
+        <td>{{ ins.data_inscricao|date:"d/m/Y H:i" }}</td>
+        <td>
+          <form class="cancel-form confirmable" method="post" action="{% url 'cancelar_inscricao' %}" style="display:inline" data-confirm="Tem certeza que deseja cancelar a inscrição deste participante?">
+            {% csrf_token %}
+            <input type="hidden" name="inscricao_id" value="{{ ins.id }}">
+            <button class="btn btn-danger btn-sm" type="submit">Cancelar inscrição</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4">Nenhum inscrito</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top:12px;"></div>
+<script>
+// intercept cancel forms to use fetch and remove row on success
+document.querySelectorAll('.cancel-form').forEach(function(f){
+  f.addEventListener('submit', function(e){
+    e.preventDefault();
+    var formData = new FormData(f);
+    fetch(f.action, {method:'POST', body: formData, headers: {'X-CSRFToken': formData.get('csrfmiddlewaretoken')}})
+    .then(r=>r.json()).then(j=>{ if(j.status=='ok'){
+        // remove row and decrement visible count
+        const row = f.closest('tr'); if(row) row.remove();
+        const el = document.getElementById('inscritos-count');
+        if(el){ const n = parseInt(el.textContent||'0',10)-1; el.textContent = Math.max(0,n); }
+      } else { alert('Falha ao cancelar'); } })
+    .catch(()=>alert('Erro'))
+  })
+})
+// handle confirm-presence forms
+// when the checkbox changes, submit confirmation; keep form submit fallback
+document.querySelectorAll('.confirm-form').forEach(function(f){
+  const checkbox = f.querySelector('.confirm-checkbox');
+  const label = f.querySelector('.confirm-label');
+  function doConfirm(){
+    if(!checkbox) return;
+    // determine desired state based on checkbox
+    const desired = checkbox.checked ? '1' : '0';
+    var formData = new FormData(f);
+    formData.set('set', desired);
+    fetch(f.action, {method:'POST', body: formData, headers: {'X-CSRFToken': formData.get('csrfmiddlewaretoken')}})
+    .then(r=>r.json()).then(j=>{
+      if(j.status=='ok'){
+        if(j.presenca){
+          label.textContent = 'Presença confirmada';
+          label.style.color = '#008c6e';
+          label.style.fontWeight = '700';
+          checkbox.checked = true;
+        } else {
+          label.textContent = 'Confirmação pendente';
+          label.style.color = '#ff8c00';
+          label.style.fontWeight = '700';
+          checkbox.checked = false;
+        }
+      } else {
+        alert(j.message || 'Falha ao atualizar confirmação');
+        // revert checkbox
+        checkbox.checked = !checkbox.checked;
+      }
+    }).catch(()=>{ alert('Erro'); checkbox.checked = !checkbox.checked; })
+  }
+  if(checkbox){
+    checkbox.addEventListener('change', doConfirm);
+  }
+  f.addEventListener('submit', function(e){ e.preventDefault(); doConfirm(); })
+})
+</script>
+<script>
+// helper to read cookie
+function getCookie(name){
+  const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+  return v ? v.pop() : '';
+}
+// handle generate code button
+const genBtn = document.getElementById('generate-code');
+if(genBtn){
+  genBtn.addEventListener('click', function(){
+    genBtn.disabled = true;
+    fetch('{% url "generate_confirmation_code" evento.id %}', {method:'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}})
+    .then(r=>r.json()).then(j=>{
+      if(j.code){ document.getElementById('code-display').innerHTML = 'Código atual: <span style="color:#000">'+j.code+'</span>'; }
+      else alert('Falha ao gerar código');
+    }).catch(()=>alert('Erro')).finally(()=> genBtn.disabled = false);
+  })
+}
+</script>
+{% endblock %}
