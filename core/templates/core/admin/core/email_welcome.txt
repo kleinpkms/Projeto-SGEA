@@ -1,8 +1,0 @@
-Olá {{ user.get_full_name|default:user.username }},
-
-Seja bem-vindo ao SGEA!
-
-Agradecemos por se cadastrar. Agora você pode se inscrever em eventos, acompanhar suas presenças e baixar certificados.
-
-Atenciosamente,
-Equipe SGEA
