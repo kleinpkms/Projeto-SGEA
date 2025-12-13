@@ -1,4 +1,4 @@
-# SGEA - Sistema de Gestão de Eventos Acadêmicos (Trabalho 2)
+# SGEA - Sistema de Gestão de Eventos Acadêmicos
 
 Sistema desenvolvido em Django com API REST para gestão de eventos acadêmicos, inscrições e emissão de certificados.
 
