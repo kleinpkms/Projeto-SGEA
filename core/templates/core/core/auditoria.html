@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+{% load auditoria_extras %}
+<head>
+    <meta charset="utf-8">
+    <title>Auditoria - Admin</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        .container{max-width:1000px;margin:2rem auto;padding:0 1rem}
+        table{width:100%;border-collapse:collapse}
+        th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+        th{background:#e9eef6;color:#1b2b40;font-weight:600}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h2>Auditoria</h2>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button class="btn" onclick="location.href='{% url 'admin_area' %}'">Voltar</button>
+            </div>
+        </div>
+        <!-- single back button kept above -->
+
+        <div id="filters-panel" style="display:block;margin-top:10px;">
+        <form id="auditoria-filter" method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <select name="action" style="padding:6px;border:1px solid #ddd;border-radius:6px;">
+                <option value="">Ação (todas)</option>
+                {% comment %} Predefined actions detected in codebase {% endcomment %}
+                {% for act in action_choices %}
+                    <option value="{{ act }}" {% if filters.action == act %}selected{% endif %}>{{ act }}</option>
+                {% endfor %}
+            </select>
+            <input list="users-list" type="text" name="usuario" placeholder="Usuário (id ou username)" value="{{ filters.usuario }}" style="padding:6px;border:1px solid #ddd;border-radius:6px;">
+            <datalist id="users-list">
+                {% for u in users %}
+                    <option value="{{ u.id }} - {{ u.get_full_name|default:u.username }}"></option>
+                {% endfor %}
+            </datalist>
+            <label style="font-size:0.85rem;color:#666;">De <input type="date" name="date_from" value="{{ filters.date_from }}" style="margin-left:6px;padding:6px;border:1px solid #ddd;border-radius:6px;"></label>
+            <label style="font-size:0.85rem;color:#666;">Até <input type="date" name="date_to" value="{{ filters.date_to }}" style="margin-left:6px;padding:6px;border:1px solid #ddd;border-radius:6px;"></label>
+            <button class="btn" type="submit">Aplicar</button>
+            <button type="button" id="clear-all" class="btn secondary">Limpar</button>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.9rem;color:#444;">
+                <input type="checkbox" name="exclude_access" value="1" {% if filters.exclude_access %}checked{% endif %}> Ocultar visualizações (Acesso Auditoria)
+            </label>
+            <a class="btn" id="download-txt" href="?{% if base_qs %}{{ base_qs }}&{% endif %}download=txt">Baixar (txt)</a>
+        </form>
+        </div>
+
+        <table style="margin-top:12px;">
+            <thead>
+                <tr><th style="width:160px">Data / Hora</th><th style="width:200px">Usuário</th><th style="width:220px">Ação</th><th>Detalhes</th></tr>
+            </thead>
+            <tbody>
+            {% for a in auditorias %}
+                <tr>
+                    <td>{{ a.data_hora|date:"d/m/Y H:i:s" }}</td>
+                    <td>{% if a.usuario %}{{ a.usuario.get_full_name|default:a.usuario.username }} (id:{{ a.usuario.id }}){% else %}-{% endif %}</td>
+                    <td>{{ a.acao }}</td>
+                    <td>
+                        {% if a.acao == 'Limpou auditoria' %}
+                            <div style="white-space:pre-wrap;">Backup: {{ a.detalhes }}</div>
+                            <div style="margin-top:6px;"><a class="btn" href="{% url 'admin_auditoria_backup' a.detalhes|basename %}">Baixar backup</a> <small style="color:#666;margin-left:8px;">(registro preservado)</small></div>
+                        {% elif 'Editou evento' in a.acao or a.acao == 'Criou evento' %}
+                            {# show only first line summary in the table to avoid clutter #}
+                                <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:560px;">{{ a.detalhes|truncatechars:120 }}</div>
+                            <div style="margin-top:6px;">
+                                <span class="evt-id" data-details="{{ a.detalhes|escapejs }}">Evento id: ...</span>
+                                <button class="btn small show-details" data-details="{{ a.detalhes|escapejs }}" style="margin-left:8px;">Ver alterações</button>
+                            </div>
+                        {% elif a.acao == 'Alterou dados' %}
+                            <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:560px;">{{ a.detalhes|truncatechars:120 }}</div>
+                            <div style="margin-top:6px;">
+                                <button class="btn small show-details" data-details="{{ a.detalhes|escapejs }}" style="margin-left:8px;">Ver alterações</button>
+                            </div>
+                        {% else %}
+                            <div style="white-space:pre-wrap;">{{ a.detalhes|linebreaksbr }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">Nenhuma entrada de auditoria encontrada.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        {% if page_obj and page_obj.paginator.num_pages > 1 %}
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            {% if base_qs %}
+                {% comment %}we'll build links as ?base_qs&page=N{% endcomment %}
+                {% with prefix='?'|add:base_qs|add:'&' %}
+                    {% if page_obj.has_previous %}<a class="btn" href="{{ prefix }}page=1">Primeira</a>{% endif %}
+                    {% if page_obj.has_previous %}<a class="btn" href="{{ prefix }}page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
+                    <span style="padding:6px 10px;border:1px solid #eee;border-radius:6px;background:#fafafa;">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}<a class="btn" href="{{ prefix }}page={{ page_obj.next_page_number }}">Próxima</a>{% endif %}
+                        {% if page_obj.has_next %}<a class="btn" href="{{ prefix }}page={{ page_obj.paginator.num_pages }}">Última</a>{% endif %}
+                        {% if page_obj.paginator.num_pages > 5 %}
+                            <form id="goto-page-form" method="get" action="?{{ base_qs }}" style="display:inline-block;margin-left:8px;">
+                                <label style="font-size:0.9rem;color:#444;">Ir para página: <input type="number" id="goto-page" name="page" min="1" max="{{ page_obj.paginator.num_pages }}" style="width:80px;padding:4px;margin-left:6px;"></label>
+                                <button class="btn" type="submit">Ir</button>
+                            </form>
+                        {% endif %}
+                {% endwith %}
+            {% else %}
+                {% if page_obj.has_previous %}<a class="btn" href="?page=1">Primeira</a>{% endif %}
+                {% if page_obj.has_previous %}<a class="btn" href="?page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
+                <span style="padding:6px 10px;border:1px solid #eee;border-radius:6px;background:#fafafa;">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}<a class="btn" href="?page={{ page_obj.next_page_number }}">Próxima</a>{% endif %}
+                                {% if page_obj.has_next %}<a class="btn" href="?page={{ page_obj.paginator.num_pages }}">Última</a>{% endif %}
+                                {% if page_obj.paginator.num_pages > 5 %}
+                                        <form id="goto-page-form" method="get" action="?" style="display:inline-block;margin-left:8px;">
+                                                <label style="font-size:0.9rem;color:#444;">Ir para página: <input type="number" id="goto-page" name="page" min="1" max="{{ page_obj.paginator.num_pages }}" style="width:80px;padding:4px;margin-left:6px;"></label>
+                                                <button class="btn" type="submit">Ir</button>
+                                        </form>
+                                {% endif %}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+        <!-- Clear confirmation modal -->
+        <div id="confirm-clear-modal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);z-index:1200;">
+            <div style="background:#fff;padding:18px;border-radius:8px;max-width:680px;width:90%;">
+                <h3 style="margin-top:0;">Confirmar limpeza da Auditoria</h3>
+                <p>Esta ação apagará TODAS as entradas da auditoria. Esta operação <strong>não</strong> pode ser desfeita.</p>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;"><input type="checkbox" id="confirm-clear-check"> Tenho certeza</label>
+                <div style="margin-top:12px;">
+                        <label style="font-size:0.9rem;color:#444;display:block;margin-bottom:6px;">Motivo (opcional)</label>
+                        <textarea id="confirm-clear-reason" rows="3" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea>
+                </div>
+                <div style="text-align:right;margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+                        <button class="btn" id="clear-cancel">Cancelar</button>
+                        <button class="btn danger" id="clear-confirm">Tenho certeza</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden form to POST clear request (CSRF included) -->
+        <form id="clear-form" method="post" action="{% url 'admin_auditoria_clear' %}" style="display:none;">{% csrf_token %}
+            <input type="hidden" name="reason" id="clear-reason-input" />
+        </form>
+
+        <!-- Details modal -->
+        <div id="details-modal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);z-index:1300;">
+            <div style="background:#fff;padding:18px;border-radius:8px;max-width:780px;width:95%;max-height:85vh;overflow:auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <h3 id="details-title" style="margin:0;font-size:1.05rem;">Alterações</h3>
+                    <button class="btn" id="details-close">Fechar</button>
+                </div>
+                <div id="details-body" style="font-family:Inter,Segoe UI,Roboto,Arial,Helvetica,sans-serif;color:#222;line-height:1.45"></div>
+            </div>
+        </div>
+</body>
+</html>
+
+<script>
+// Clear filters button behaviour
+document.addEventListener('DOMContentLoaded', function(){
+    var clearBtn = document.getElementById('clear-all');
+    var modal = document.getElementById('confirm-clear-modal');
+    var clearCancel = document.getElementById('clear-cancel');
+    var clearConfirm = document.getElementById('clear-confirm');
+    var confirmCheck = document.getElementById('confirm-clear-check');
+    var reasonInput = document.getElementById('confirm-clear-reason');
+    var clearForm = document.getElementById('clear-form');
+    if(clearBtn && modal){
+        clearBtn.addEventListener('click', function(){ modal.style.display = 'flex'; document.body.style.overflow='hidden'; });
+        clearCancel.addEventListener('click', function(){ modal.style.display = 'none'; document.body.style.overflow='auto'; });
+        clearConfirm.addEventListener('click', function(){
+            if(!confirmCheck.checked) return alert('Marque "Tenho certeza" para proceder.');
+            // set reason and submit POST form
+            document.getElementById('clear-reason-input').value = reasonInput.value || '';
+            clearForm.submit();
+        });
+    }
+
+    // details HUD: parse details string and show nicely
+    Array.from(document.querySelectorAll('.show-details')).forEach(function(btn){
+            btn.addEventListener('click', function(){
+            var raw = btn.getAttribute('data-details') || '';
+            // decode escapejs unicode sequences like "\u000A" that were produced by escapejs
+            try{
+                // convert explicit newline escapes to real newlines
+                raw = raw.replace(/\\u000A/g, '\n');
+                // convert other unicode escapes (\uXXXX) to characters
+                raw = raw.replace(/\\u([0-9a-fA-F]{4})/g, function(m,hex){ return String.fromCharCode(parseInt(hex,16)); });
+                // unescape common escaped quotes/backslashes
+                raw = raw.replace(/\\\"/g, '"').replace(/\\\'/g, "'").replace(/\\\\/g, '\\');
+            }catch(e){ /* ignore */ }
+            var body = document.getElementById('details-body');
+            var title = document.getElementById('details-title');
+            // try to extract Evento id if present
+            var evtMatch = raw.match(/Evento id=(\d+)/);
+            if(evtMatch){ title.textContent = 'Alterações — Evento id=' + evtMatch[1]; }
+            else { title.textContent = 'Alterações'; }
+            // split by newline for nicer layout (we store details as multi-line strings)
+            var parts = raw.split(/\n+/).map(function(s){ return s.trim(); }).filter(Boolean);
+            body.innerHTML = '';
+            // detect banner lines and show previews first
+            var bannerUrls = [];
+            var remaining = [];
+            parts.forEach(function(p){
+                var low = p.toLowerCase();
+                if(low.indexOf('banner_url') !== -1 || low.indexOf('banner_new') !== -1 || low.indexOf('banner_old') !== -1){
+                    // extract url after ':' or '='
+                    var v = p.split(/[:=]/).slice(1).join(':').trim();
+                    if(v) bannerUrls.push(v);
+                } else if(low.indexOf('banner_name') !== -1){
+                    // ignore banner name here (optional)
+                } else {
+                    remaining.push(p);
+                }
+            });
+            if(bannerUrls.length){
+                var imgWrap = document.createElement('div'); imgWrap.style.display='flex'; imgWrap.style.gap='12px'; imgWrap.style.marginBottom='10px';
+                bannerUrls.forEach(function(u){
+                    try{
+                        var src = u;
+                        // if url is relative (no scheme and not starting with '/'), prepend MEDIA_URL
+                        if(!/^https?:\/\//.test(u) && u.indexOf('/') !== 0){
+                            src = '{{ media_url }}' + u;
+                        }
+                        var img = document.createElement('img'); img.src = src; img.style.maxWidth='220px'; img.style.maxHeight='140px'; img.style.border='1px solid #eee'; img.style.borderRadius='6px'; img.style.objectFit='cover';
+                        imgWrap.appendChild(img);
+                    }catch(e){}
+                });
+                body.appendChild(imgWrap);
+            }
+            // detect profile photo lines (photo: old -> new) and show preview if new
+            parts.forEach(function(p){
+                var low = p.toLowerCase();
+                if(low.indexOf('photo:') !== -1){
+                    // format: photo: old -> new
+                    var v = p.split('->').slice(1).join('->').trim();
+                    if(v && v !== '-' ){
+                        var src = v;
+                        if(!/^https?:\/\//.test(v) && v.indexOf('/') !== 0){
+                            src = '{{ media_url }}' + v;
+                        }
+                        try{
+                            var pimg = document.createElement('img'); pimg.src = src; pimg.style.maxWidth='120px'; pimg.style.maxHeight='120px'; pimg.style.border='1px solid #eee'; pimg.style.borderRadius='6px'; pimg.style.objectFit='cover'; pimg.style.marginBottom='10px';
+                            body.appendChild(pimg);
+                        }catch(e){}
+                    }
+                }
+            });
+            remaining.forEach(function(p){
+                var label = p;
+                var val = '';
+                if(p.indexOf('->') !== -1){ var sp = p.split('->'); label = sp[0].trim(); val = sp[1].trim(); }
+                else if(p.indexOf('=') !== -1){ var sp = p.split('='); label = sp[0].trim(); val = sp.slice(1).join('=').trim(); }
+                else if(p.indexOf(':') !== -1){ var sp = p.split(':'); label = sp[0].trim(); val = p.slice(label.length+1).trim(); }
+                var row = document.createElement('div');
+                row.style.padding = '10px 0';
+                row.style.borderBottom = '1px solid #f6f6f6';
+                var h = document.createElement('div'); h.style.fontWeight = '700'; h.style.marginBottom='6px'; h.textContent = label;
+                var v = document.createElement('div'); v.style.color='#444'; v.style.whiteSpace='pre-wrap'; v.textContent = val;
+                row.appendChild(h); row.appendChild(v); body.appendChild(row);
+            });
+            document.getElementById('details-modal').style.display = 'flex'; document.body.style.overflow='hidden';
+        });
+    });
+    var detailsClose = document.getElementById('details-close'); if(detailsClose){ detailsClose.addEventListener('click', function(){ document.getElementById('details-modal').style.display='none'; document.body.style.overflow='auto'; }); }
+
+    // populate event id placeholders for rows (client-side parsing)
+    Array.from(document.querySelectorAll('.evt-id')).forEach(function(span){
+        var raw = span.getAttribute('data-details') || '';
+        var m = raw.match(/Evento id=(\d+)/);
+        if(m){ span.textContent = 'Evento id: ' + m[1]; }
+        else { span.textContent = 'Evento id: -'; }
+    });
+    // filters shown by default; no tab toggles required
+});
+// ensure filter form signals an explicit apply so server can distinguish fresh load from user-applied empty filters
+document.addEventListener('DOMContentLoaded', function(){
+    try{
+        var f = document.getElementById('auditoria-filter');
+        if(f){
+            f.addEventListener('submit', function(ev){
+                // add a param to indicate the user applied filters
+                if(!f.querySelector('input[name="_applied"]')){
+                    var hf = document.createElement('input'); hf.type='hidden'; hf.name='_applied'; hf.value='1'; f.appendChild(hf);
+                }
+            });
+        }
+    }catch(e){}
+});
+</script>
