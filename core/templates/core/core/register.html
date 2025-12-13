@@ -37,14 +37,14 @@
         {% csrf_token %}
         <div class="row"><div class="col"><input name="first_name" placeholder="Nome" required></div><div class="col"><input name="last_name" placeholder="Sobrenome" required></div></div>
         <div><input name="email" placeholder="E-mail" type="email" required></div>
-        <div><input name="telefone" placeholder="Telefone" id="telefone" autocomplete="tel"></div>
-        <div><label>Data de Nascimento</label><input name="data_nascimento" id="data_nascimento" type="date"></div>
+        <div><input name="telefone" placeholder="Telefone" id="telefone" autocomplete="tel" required></div>
+        <div><label>Data de Nascimento</label><input name="data_nascimento" id="data_nascimento" type="date" required></div>
         <div style="display:flex;gap:8px;"><div style="flex:1;"><label>Senha</label><div style="position:relative;"><input name="password" id="password" placeholder="Senha" type="password" required style="width:100%;padding-right:44px;"><button type="button" class="toggle-password" data-target="password" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;">👁️</button></div></div>
         <div style="flex:1;"><label>Confirmar senha</label><div style="position:relative;"><input name="password_confirm" id="password_confirm" placeholder="Confirmar senha" type="password" required style="width:100%;padding-right:44px;"><button type="button" class="toggle-password" data-target="password_confirm" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;">👁️</button></div></div></div>
         <div id="pw-hint" style="font-size:0.9rem;color:#666;margin-top:6px;">Senha: mínimo 8 caracteres, letras, números e caracteres especiais.</div>
         <div style="margin-top:12px;display:flex;gap:12px;">
           <button class="btn primary" type="submit" style="flex:1;">Registrar</button>
-          <a href="/" class="btn secondary" style="flex:1;display:inline-flex;align-items:center;justify-content:center;">Cancelar</a>
+          <a href="/" class="btn secondary" style="flex:1;display:inline-flex;align-items:center;justify-content:center;">Voltar</a>
         </div>
       </form>
       </div>
