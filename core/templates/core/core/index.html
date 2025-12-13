@@ -359,6 +359,28 @@
 					const btn = f.querySelector('.inscrever-btn');
 					if(btn){ btn.textContent = 'Inscrito'; btn.disabled = true; btn.classList.add('disabled'); }
 					try{ updateVacancy(eid, -1); createCancelInline(eid, fd.get('csrfmiddlewaretoken')); }catch(e){}
+					// insert a row into the certificates table to reflect the new inscription
+					try{
+						const certTbody = document.querySelector('#certificates-card tbody');
+						if(certTbody){
+							// remove empty placeholder row if present
+							const empty = certTbody.querySelector('tr td');
+							if(empty && empty.textContent && empty.textContent.trim().includes('Você não possui inscrições')){
+								certTbody.innerHTML = '';
+							}
+							// find event title from feed
+							let evName = '';
+							const evRoot = document.querySelector('[data-event-id="'+eid+'"]');
+							if(evRoot){
+								const titleEl = evRoot.querySelector('.event-title') || evRoot.querySelector('.event-banner') || evRoot.querySelector('h3');
+								if(titleEl) evName = titleEl.textContent.trim();
+							}
+							if(!evName) evName = 'Evento '+eid;
+							const tr = document.createElement('tr');
+							tr.innerHTML = `<td>${evName}</td><td><span style="color:#ff8c00;font-weight:700;">Confirmação pendente</span></td><td style="text-align:center;">—</td>`;
+							certTbody.insertBefore(tr, certTbody.firstChild);
+						}
+					}catch(e){ console.error('failed to update certificates UI', e); }
 					return true;
 				} else {
 					const msg = (j && (j.error || j.detail)) || ('Falha ao inscrever (status '+r.status+')');
