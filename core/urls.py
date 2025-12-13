@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import EventoViewSet, InscricaoViewSet, emitir_certificado_view, api_login, sair, login_view, home, admin_area, admin_event_inscritos, cancelar_inscricao
+from .views import EventoViewSet, InscricaoViewSet, emitir_certificado_view, api_login, sair, login_view, home, admin_area, admin_event_inscritos, cancelar_inscricao, admin_auditoria, admin_clear_auditoria, download_auditoria_backup
 from .views import cancelar_minha_inscricao, confirmar_presenca, generate_confirmation_code, confirmar_codigo_participante
 from .views import register_view, verify_view, profile_view, change_password_view
 from .views import resend_verification
@@ -16,6 +16,9 @@ urlpatterns = [
 	path('sair/', sair, name='sair'),
 	path('admin-area/', admin_area, name='admin_area'),
 	path('admin-area/inscritos/<int:event_id>/', admin_event_inscritos, name='admin_event_inscritos'),
+	path('admin-area/auditoria/', admin_auditoria, name='admin_auditoria'),
+    path('admin-area/auditoria/clear/', admin_clear_auditoria, name='admin_auditoria_clear'),
+		path('admin-area/auditoria/backup/<str:filename>/', download_auditoria_backup, name='admin_auditoria_backup'),
 	path('admin-area/cancelar-inscricao/', cancelar_inscricao, name='cancelar_inscricao'),
 	path('admin-area/confirmar-presenca/', confirmar_presenca, name='confirmar_presenca'),
 	path('admin-area/generate-code/<int:event_id>/', generate_confirmation_code, name='generate_confirmation_code'),
