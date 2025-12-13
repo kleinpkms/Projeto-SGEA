@@ -21,6 +21,9 @@
 				{% if can_create %}
 				<button id="toggle-events-hud" class="btn primary" style="min-width:120px;padding:10px 18px;">Criar Evento</button>
 				{% endif %}
+				{% if show_audit_button %}
+				<button id="open-audit" class="btn" style="min-width:120px;padding:10px 18px;" onclick="location.href='{% url 'admin_auditoria' %}'">Auditoria</button>
+				{% endif %}
 				<button type="button" class="btn secondary" style="min-width:120px;padding:10px 18px;" onclick="location.href='/home/'">Voltar</button>
 			</div>
 		</div>
@@ -126,6 +129,7 @@
 				function resetForm(){
 					editMode = false; editingId = null;
 					window.evEditMode = false;
+					window.editingId = null;
 					form.action = '';
 					form.querySelector('input[name="action"]').value = 'create_event';
 					submitBtn.textContent = 'Criar evento';
@@ -172,6 +176,7 @@
 						// set edit mode
 						editMode = true; editingId = data.id;
 						window.evEditMode = true;
+						window.editingId = data.id;
 						form.querySelector('input[name="action"]').value = 'edit_event';
 						// ensure a hidden input with event_id
 						let hid = document.getElementById('event_id_field');
@@ -185,7 +190,13 @@
 				// add cancel button
 				const cancelBtn = document.createElement('button'); cancelBtn.type='button'; cancelBtn.className='btn'; cancelBtn.style.marginLeft='8px'; cancelBtn.textContent='Cancelar';
 				cancelBtn.addEventListener('click', resetForm);
-				submitBtn.parentNode.appendChild(cancelBtn);
+				// avoid duplicating cancel button
+				cancelBtn.classList.add('cancel-event-cancel');
+				if(!submitBtn.parentNode.querySelector('button.cancel-event-cancel')){
+					submitBtn.parentNode.appendChild(cancelBtn);
+				}
+				// expose for AJAX handlers to reset state
+				window.resetEventForm = resetForm;
 
 				// close shortcuts when clicking outside (safe access to elements)
 				document.addEventListener('click', function(ev){
@@ -313,38 +324,40 @@
 
 			// client-side ensure banner required and validate extension
 			document.getElementById('create-event-form').addEventListener('submit', function(e){
+				e.preventDefault();
+				const form = e.target;
 				const banner = document.getElementById('ev-banner');
 				const hasFile = banner && banner.files && banner.files.length > 0;
 				// require banner only when creating a new event
 				if(!window.evEditMode){
-					if(!hasFile){ e.preventDefault(); alert('Banner é obrigatório.'); return false; }
+					if(!hasFile){ alert('Banner é obrigatório.'); return false; }
 				}
 				const allowed = ['.png','.jpg','.jpeg','.gif','.webp','.bmp','.tiff','.tif'];
 				if(hasFile){
 					const name = banner.files[0].name.toLowerCase();
-					if(!allowed.some(ext=>name.endsWith(ext))){ e.preventDefault(); alert('Formato de banner não suportado.'); return false; }
+					if(!allowed.some(ext=>name.endsWith(ext))){ alert('Formato de banner não suportado.'); return false; }
 				}
 				const nome = document.getElementById('ev-nome').value.trim();
 				const desc = document.getElementById('ev-descricao').value.trim();
-				if(!nome || !desc){ e.preventDefault(); alert('Nome e descrição são obrigatórios.'); return false; }
+				if(!nome || !desc){ alert('Nome e descrição são obrigatórios.'); return false; }
 				// ensure dates are valid
 				const di = document.getElementById('data_inicio_date').value;
 				const hi = document.getElementById('hora_inicio').value;
 				const df = document.getElementById('data_fim_date').value;
 				const hf = document.getElementById('hora_fim').value;
-				if(!di||!hi||!df||!hf){ e.preventDefault(); alert('Preencha data e hora de início e fim.'); return false; }
+				if(!di||!hi||!df||!hf){ alert('Preencha data e hora de início e fim.'); return false; }
 				const [yi,mi,diay] = di.split('-').map(Number);
 				const [hiH,hiM] = hi.split(':').map(Number);
 				const [yf,mf,dfay] = df.split('-').map(Number);
 				const [hfH,hfM] = hf.split(':').map(Number);
 				const start = new Date(yi, mi-1, diay, hiH, hiM, 0);
 				const end = new Date(yf, mf-1, dfay, hfH, hfM, 0);
-				if(end<=start){ e.preventDefault(); alert('Data/hora de fim deve ser posterior à de início.'); return false; }
+				if(end<=start){ alert('Data/hora de fim deve ser posterior à de início.'); return false; }
 				// attach combined datetime values into hidden inputs so server receives full datetimes
 				let hiddenStart = document.getElementById('hidden_start');
 				let hiddenEnd = document.getElementById('hidden_end');
-				if(!hiddenStart){ hiddenStart = document.createElement('input'); hiddenStart.type='hidden'; hiddenStart.name='data_inicio'; hiddenStart.id='hidden_start'; document.getElementById('create-event-form').appendChild(hiddenStart); }
-				if(!hiddenEnd){ hiddenEnd = document.createElement('input'); hiddenEnd.type='hidden'; hiddenEnd.name='data_fim'; hiddenEnd.id='hidden_end'; document.getElementById('create-event-form').appendChild(hiddenEnd); }
+				if(!hiddenStart){ hiddenStart = document.createElement('input'); hiddenStart.type='hidden'; hiddenStart.name='data_inicio'; hiddenStart.id='hidden_start'; form.appendChild(hiddenStart); }
+				if(!hiddenEnd){ hiddenEnd = document.createElement('input'); hiddenEnd.type='hidden'; hiddenEnd.name='data_fim'; hiddenEnd.id='hidden_end'; form.appendChild(hiddenEnd); }
 				// build local date/time strings (no timezone) so server keeps the wall-clock values
 				const startDt = new Date(Number(yi), Number(mi)-1, Number(diay), Number(hiH), Number(hiM), 0);
 				const endDt = new Date(Number(yf), Number(mf)-1, Number(dfay), Number(hfH), Number(hfM), 0);
@@ -354,11 +367,62 @@
 				}
 				hiddenStart.value = localIsoNoTZ(startDt);
 				hiddenEnd.value = localIsoNoTZ(endDt);
+				// build FormData and submit via fetch so we can update UI without reload
+				const fd = new FormData(form);
+				fetch(window.location.href, {method: 'POST', body: fd, credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+				.then(r => r.json())
+				.then(j => {
+					if(j && j.status === 'ok' && j.evento){
+						// update counters
+						try{
+							const bigNums = document.querySelectorAll('.stats .stat > div:first-child');
+							const evtEl = bigNums && bigNums[0];
+							const insEl = bigNums && bigNums[1];
+							if(evtEl){ evtEl.textContent = (typeof j.total_eventos !== 'undefined' ? j.total_eventos : evtEl.textContent); }
+							if(insEl && typeof j.total_inscricoes !== 'undefined'){ insEl.textContent = j.total_inscricoes; }
+						}catch(e){console.error(e)}
+						// insert new row into recent events table (prepend) or update existing row if editing
+						try{
+							function fmt(dtStr){ if(!dtStr) return ''; try{ var d = new Date(dtStr); function p(n){return n<10?('0'+n):n} return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+p(d.getFullYear())+' '+p(d.getHours())+':'+p(d.getMinutes()); }catch(e){ return dtStr; }}
+							const tbody = document.querySelector('.recent tbody');
+							if(tbody){
+								const ev = j.evento;
+								// if a row with same id exists, replace it (covers both edit and accidental duplicates)
+								const existing = document.querySelector('tr[data-ev-id="'+ev.id+'"]');
+								if(existing){
+									existing.innerHTML = `<td><div style="font-weight:700">${ev.nome}</div><div style="color:#007acc; font-size:0.9rem;">Responsável: ${ev.responsavel_name || ''}</div></td><td>${fmt(ev.data_inicio)}</td><td>${ev.vagas}</td><td>${ev.carga_horaria_minutos} min</td><td>${formActionsHtml(ev.id)}</td>`;
+								} else {
+									const tr = document.createElement('tr'); tr.setAttribute('data-ev-id', ev.id);
+									tr.innerHTML = `<td><div style="font-weight:700">${ev.nome}</div><div style="color:#007acc; font-size:0.9rem;">Responsável: ${ev.responsavel_name || ''}</div></td><td>${fmt(ev.data_inicio)}</td><td>${ev.vagas}</td><td>${ev.carga_horaria_minutos} min</td><td>${formActionsHtml(ev.id)}</td>`;
+									// prepend
+									if(tbody.firstChild) tbody.insertBefore(tr, tbody.firstChild); else tbody.appendChild(tr);
+								}
+							}
+						}catch(e){console.error('failed to insert/update row', e)}
+						// reset form/hide HUD (call shared reset so editing state is cleared)
+						try{ if(window.resetEventForm) window.resetEventForm(); else { document.getElementById('create-event-form').reset(); document.getElementById('events-hud').style.display='none'; } }catch(e){}
+					} else if(j && j.status === 'error'){
+						alert(j.message || 'Falha ao criar evento'); console.error(j);
+					} else {
+						alert('Falha ao criar evento'); console.error(j);
+					}
+				})
+				.catch(err=>{ console.error(err); alert('Erro ao criar evento'); });
 			});
 
 		})();
-		</script>
-		<div class="stats">
+			</script>
+			<script>
+			// helper to build actions HTML for newly inserted rows
+			const inscritosUrlTemplate = "{% url 'admin_event_inscritos' 0 %}";
+			function formActionsHtml(id){
+				try{
+					const url = inscritosUrlTemplate.replace(/0(?!.*0)/, id);
+					return `<a class="btn" href="${url}" style="background:#17a2b8;color:#fff;margin-left:6px;">Ver inscritos</a>`;
+				}catch(e){ return '' }
+			}
+			</script>
+			<div class="stats">
 			<div class="stat"><div style="font-size:28px;font-weight:700">{{ total_eventos }}</div><div>Eventos</div></div>
 			<div class="stat"><div style="font-size:28px;font-weight:700">{{ total_inscricoes }}</div><div>Inscrições</div></div>
 		</div>
@@ -442,10 +506,13 @@ document.addEventListener('DOMContentLoaded', function(){
 						const row = document.querySelector('tr[data-ev-id="'+eid+'"]');
 						if(row) row.remove();
 						// decrement counters if present
-						const evtEl = document.querySelector('.stats .stat:first-child div');
-						const insEl = document.querySelectorAll('.stats .stat div')[1];
-						if(evtEl){ let n = parseInt(evtEl.textContent||0,10); if(!isNaN(n) && n>0){ evtEl.textContent = (n-1); } }
-						if(insEl){ let n = parseInt(insEl.textContent||0,10); if(!isNaN(n) && n>0){ insEl.textContent = (n-0); } }
+						try{
+							const bigNums = document.querySelectorAll('.stats .stat > div:first-child');
+							const evtEl = bigNums && bigNums[0];
+							const insEl = bigNums && bigNums[1];
+							if(evtEl){ let n = parseInt(evtEl.textContent||0,10); if(!isNaN(n) && n>0){ evtEl.textContent = (n-1); } }
+							if(insEl){ let n = parseInt(insEl.textContent||0,10); if(!isNaN(n) && n>0){ insEl.textContent = (n-0); } }
+						}catch(e){ console.error('counter update failed', e); }
 					}catch(e){ console.error('UI update after delete failed', e); }
 				} else {
 					return res.text().then(t=>{ alert('Falha ao remover evento'); console.error(t); });
