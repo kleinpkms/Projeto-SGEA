@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>SGEA - Admin</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body>
+  <div class="container">
+    <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h2>Área Administrativa</h2>
+      <div><a href="{% url 'admin_area' %}" class="btn">Voltar</a></div>
+    </header>
+    {% block content %}{% endblock %}
+  </div>
+  <!-- Confirmation modal (site-styled) -->
+  <div id="site-confirm-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9998;align-items:center;justify-content:center;">
+    <div id="site-confirm" style="background:#fff;padding:18px;border-radius:10px;max-width:420px;width:94%;box-shadow:0 12px 40px rgba(0,0,0,0.2);">
+      <div id="site-confirm-msg" style="font-size:1rem;color:#222;margin-bottom:12px;"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button id="site-confirm-no" class="btn secondary" style="background:transparent;color:#b30000;border:1px solid rgba(0,0,0,0.06);">Não</button>
+        <button id="site-confirm-yes" class="btn" style="background:#28a745;">Sim</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function(){
+      const overlay = document.getElementById('site-confirm-overlay');
+      const msg = document.getElementById('site-confirm-msg');
+      const yes = document.getElementById('site-confirm-yes');
+      const no = document.getElementById('site-confirm-no');
+      let resolveCb = null;
+      function showConfirm(text){
+        return new Promise(function(resolve){
+          msg.textContent = text || 'Confirma?';
+          overlay.style.display = 'flex';
+          resolveCb = resolve;
+        });
+      }
+      function hide(){ overlay.style.display='none'; resolveCb=null; }
+      no.addEventListener('click', function(){ if(resolveCb) resolveCb(false); hide(); });
+      yes.addEventListener('click', function(){ if(resolveCb) resolveCb(true); hide(); });
+
+      // delegate: intercept forms/buttons with class 'confirmable' or data-confirm
+      document.addEventListener('submit', function(ev){
+        const f = ev.target;
+        if(f && f.classList && f.classList.contains('confirmable')){
+          ev.preventDefault();
+          const txt = f.getAttribute('data-confirm') || 'Tem certeza?';
+          showConfirm(txt).then(function(ok){ if(!ok) return; try{ f.classList.remove('confirmable'); }catch(e){}; /* dispatch submit event so local AJAX handlers can run; if not canceled, perform native submit */ var ev2 = new Event('submit', { bubbles:true, cancelable:true }); var proceed = f.dispatchEvent(ev2); if(proceed){ try{ f.submit(); }catch(e){ /* ignore */ } } });
+        }
+      }, true);
+
+      document.addEventListener('click', function(ev){
+        const b = ev.target.closest && ev.target.closest('[data-confirm]');
+        if(b && b.classList && b.classList.contains('confirmable')){
+          ev.preventDefault();
+          const txt = b.getAttribute('data-confirm') || 'Tem certeza?';
+          showConfirm(txt).then(function(ok){ if(!ok) return; try{ b.classList.remove('confirmable'); }catch(e){}; const form = b.closest('form'); if(form){ var ev3 = new Event('submit', { bubbles:true, cancelable:true }); var proceed2 = form.dispatchEvent(ev3); if(proceed2){ try{ form.submit(); }catch(e){} } } else if(b.href) location.href = b.href; });
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

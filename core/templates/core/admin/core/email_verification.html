@@ -1,0 +1,12 @@
+<html>
+  <body style="font-family:Arial,Helvetica,sans-serif;color:#111;">
+    <div style="max-width:600px;margin:0 auto;padding:18px;border:1px solid #eee;">
+      <h2 style="color:#0a58ca">Verificação de e-mail — SGEA</h2>
+      <p>Olá {{ user.first_name }},</p>
+      <p>Use o código abaixo para verificar seu e-mail no SGEA:</p>
+      <div style="font-size:20px;padding:12px 16px;margin:12px 0;background:#f4f6fb;border-radius:6px;display:inline-block;letter-spacing:3px;font-weight:700">{{ code }}</div>
+      <p>Se você não solicitou este código, ignore esta mensagem.</p>
+      <p>Atenciosamente,<br/>Equipe SGEA</p>
+    </div>
+  </body>
+</html>

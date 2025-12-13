@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Verificar conta</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h2 style="text-align:center;margin-top:1.5rem;">Verificação de conta</h2>
+    {% if success %}
+      <div class="alert alert-success">Conta verificada com sucesso. Você está logado.</div>
+      <a href="/home/" class="btn">Ir para o portal</a>
+    {% else %}
+      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+      <style>
+        .verify-card{max-width:480px;background:#fff;padding:20px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.08);margin:28px auto}
+        .countdown{font-weight:700;color:#0a58ca;margin-left:8px}
+      </style>
+      <div class="verify-card">
+        <p>Enviamos um código para: <strong>{{ verification.target_email }}</strong></p>
+        <form method="post" id="verify-form">
+          {% csrf_token %}
+          <label for="code">Código</label>
+          <input name="code" id="code" required style="width:100%;padding:10px;margin-top:8px;">
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+            <button class="btn primary" type="submit" style="flex:1;min-height:44px">Verificar</button>
+            <button type="button" id="resend-btn" class="btn secondary" style="flex:1;min-height:44px;">Reenviar código</button>
+            <span id="timer" class="countdown"></span>
+          </div>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</body>
+  <script>
+// CSRF helper
+function getCookie(name){
+  const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+  return v ? v.pop() : '';
+}
+(function(){
+  const btn = document.getElementById('resend-btn');
+  const timerEl = document.getElementById('timer');
+  if(!btn) return;
+  let cooldown = 0;
+  function startCooldown(sec){
+    cooldown = sec;
+    btn.disabled = true;
+    update();
+    const it = setInterval(()=>{
+      cooldown -= 1;
+      if(cooldown <= 0){ clearInterval(it); btn.disabled = false; timerEl.textContent = ''; }
+      else update();
+    },1000);
+  }
+  function update(){ timerEl.textContent = cooldown>0 ? 'Reenviar em '+cooldown+'s' : ''; }
+
+  btn.addEventListener('click', function(){
+    btn.disabled = true;
+    timerEl.textContent = 'Enviando...';
+    fetch('{% url "resend_verification" verification.id %}', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'X-CSRFToken': getCookie('csrftoken')}
+    }).then(r=>r.json()).then(j=>{
+      if(j.error){ alert(j.error || 'Falha'); btn.disabled=false; }
+      else if(j.new_id){ window.location = '/verify/'+j.new_id+'/'; }
+      else { startCooldown(30); }
+    }).catch(()=>{ alert('Falha ao reenviar'); btn.disabled=false; timerEl.textContent=''; });
+    // force minimal cooldown UI while awaiting response
+    startCooldown(30);
+  });
+  // start initial cooldown when server indicates remaining_seconds
+  (function(){
+    try{
+      var initial = Number({{ remaining_seconds|default:0 }} || 0);
+      if(initial > 0){ startCooldown(initial); }
+    }catch(e){ }
+  })();
+  })();
+</script>
+</html>
