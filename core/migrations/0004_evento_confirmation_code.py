@@ -1,4 +1,3 @@
-# Generated migration to add confirmation_code to Evento
 from django.db import migrations, models
 
 class Migration(migrations.Migration):
