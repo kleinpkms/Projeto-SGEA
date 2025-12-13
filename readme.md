@@ -14,51 +14,89 @@ Sistema desenvolvido em Django com API REST para gestão de eventos acadêmicos,
    ```bash
    python -m venv venv
    # No Windows:
-   .\venv\Scripts\activate
-   # No Linux/Mac:
-   source venv/bin/activate
+# SGEA - Sistema de Gestão de Eventos Acadêmicos (Fase 2)
 
-3. **Instalar as dependências:**
+Este repositório contém a base para a Fase 2 do SGEA. Os componentes Django foram restaurados como um esqueleto funcional (modelos, API, templates estáticos e scripts de seeding) e a documentação abaixo descreve como configurar, testar e usar o sistema localmente.
 
-    pip install django djangorestframework markdown django-filter pillow
+## Pré-requisitos
+- Python 3.8 ou superior
+- Git (opcional)
 
-4.**Configurar o Banco de Dados:**
+## Passos de instalação (ambiente local)
 
-     python manage.py migrate
+1. Crie e ative o ambiente virtual
 
-5. **Popular o Banco com Dados Iniciais (Seeding):**
+```bash
+python -m venv venv
+# No Windows (PowerShell):
+.\venv\Scripts\Activate.ps1
+# Ou no CMD:
+.\venv\Scripts\activate
+# No macOS/Linux:
+source venv/bin/activate
+```
 
-    python seed.py
+2. Instale as dependências
 
-Isso criará os usuários: Organizador, Professor e Aluno.
+```bash
+pip install -r requirements.txt
+```
 
-6.**Executar o servidor:**
+3. Aplique migrações e crie o banco de dados (SQLite por padrão)
 
-    python manage.py runserver
-    
-Acesse: http://127.0.0.1:8000/
+```bash
+python manage.py migrate
+```
 
-## Guia de Testes
+4. Popular o banco com dados iniciais (seeding)
 
-1. **Acesso ao Sistema**
-    Admin: Acesse /admin
+```bash
+python seed.py
+```
 
-    Login Organizador: organizador@sgea.com | Senha: Admin@123
+5. Executar o servidor em desenvolvimento
 
-    Login Aluno: aluno@sgea.com | Senha: Aluno@123
+```bash
+python manage.py runserver
+```
 
-2. **Testando a API REST**
-    Acesse os endpoints para verificar a listagem e inscrições:
+O sistema ficará disponível em http://127.0.0.1:8000/
 
-    Eventos: GET /api/eventos/ (Requer autenticação)
+## API REST
 
-    Inscrições: POST /api/inscricoes/
+Endpoints principais:
+- POST `/api-token-auth/` — Autenticação: enviar `username` e `password` (retorna `token`).
+- GET `/api/eventos/` — Listar eventos (autenticação por token).
+- POST `/api/inscricoes/` — Criar inscrição do usuário autenticado em um evento.
 
-3. **Funcionalidades Implementadas**
-    Cadastro de Eventos com Banner (Upload de Imagens).
+Autenticação: use o cabeçalho `Authorization: Token <token>` após obter o token.
 
-    API REST com controle de acesso (Throttling).
+Limites (Throttling):
+- Consulta de Eventos: 20 requisições por dia por usuário (escopo `event-list`).
+- Inscrições: 50 requisições por dia por usuário (escopo `inscricao`).
 
-    Automação de E-mail de Boas-vindas (Simulado no Terminal).
+## Regras de negócio resumidas
+- Não é permitido cadastrar eventos com data de início anterior à data atual.
+- Todo evento deve ter um professor responsável (`responsavel`).
+- Não é permitida inscrição quando o número de vagas do evento for atingido.
+- Um usuário não pode se inscrever mais de uma vez no mesmo evento.
+- Senhas devem ter no mínimo 8 caracteres (validador padrão do Django está configurado).
 
-    Perfis de Acesso (Organizador, Professor, Aluno).
+## Upload de imagens (banner)
+- O campo `banner` aceita arquivos de imagem (`.png`, `.jpg`, `.jpeg`). A validação é feita no model e antes do salvamento.
+
+## E-mail de boas-vindas
+- Na criação de um novo usuário, um e-mail de boas-vindas é enviado (no ambiente de desenvolvimento o backend padrão escreve no console).
+
+## Emissão de certificados
+- Os templates HTML para certificado foram mantidos; há lógica para renderização e geração via view. Um comando de management pode ser implementado para emissão em lote após término do evento.
+
+## Testes manuais sugeridos (roteiro rápido)
+1. Criar venv e instalar requisitos.
+2. Rodar `python manage.py migrate`.
+3. Executar `python seed.py` para garantir os usuários iniciais:
+   - `organizador@sgea.com` / `Admin@123` (Organizador)
+   - `aluno@sgea.com` / `Aluno@123` (Aluno)
+   - `professor@sgea.com` / `Professor@123` (Professor)
+4. Autenticar via `/api-token-auth/` e testar `GET /api/eventos/` com token.
+5. Testar inscrição via `POST /api/inscricoes/` usando o token do usuário aluno.
