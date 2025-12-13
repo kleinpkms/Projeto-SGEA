@@ -1,4 +1,3 @@
-# Generated migration to add snapshot fields to Inscricao and make evento nullable
 from django.db import migrations, models
 import django.db.models.deletion
 
