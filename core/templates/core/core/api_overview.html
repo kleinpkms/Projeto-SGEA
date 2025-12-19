@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <title>API Overview - SGEA</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style> body{padding:20px;max-width:900px;margin:0 auto;} .ep{padding:10px;border-radius:8px;background:#fff;margin-bottom:8px;box-shadow:0 8px 24px rgba(0,0,0,0.04);} </style>
+</head>
+<body>
+    <h1>API Overview</h1>
+    <p>Lista simples de endpoints e notas. Acesso restrito a administradores.</p>
+    <div>
+        <div class="ep"><strong>/api/eventos/</strong> — Listar/consultar eventos (token/session auth).</div>
+        <div class="ep"><strong>/api/inscricoes/</strong> — Criar/listar inscrições do usuário autenticado.</div>
+        <div class="ep"><strong>/api-token-auth/</strong> — Gerar token via usuário/senha para uso em API.</div>
+    </div>
+
+    <h2>Testar Endpoints</h2>
+    <form style="display:none">{% csrf_token %}</form>
+    <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.04);margin-bottom:12px;">
+        <div style="margin-bottom:8px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button id="btn-list-eventos" class="btn">GET /api/eventos/ (listar)</button>
+                <label style="font-size:0.9rem;color:#666;">Repetir: <input id="times-list-eventos" type="number" min="1" value="1" style="width:60px;padding:6px;margin-left:6px;"></label>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button id="btn-list-inscricoes" class="btn">GET /api/inscricoes/ (minhas)</button>
+                <label style="font-size:0.9rem;color:#666;">Repetir: <input id="times-list-inscricoes" type="number" min="1" value="1" style="width:60px;padding:6px;margin-left:6px;"></label>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <input id="inscrever-evento-id" placeholder="evento id para inscrição" style="width:160px;padding:6px;" />
+                <button id="btn-post-inscricao" class="btn">POST /api/inscricoes/ (criar)</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <input id="token-username" placeholder="usuário" style="width:120px;padding:6px;" />
+                <input id="token-password" placeholder="senha" type="password" style="width:120px;padding:6px;" />
+                <button id="btn-get-token" class="btn">POST /api-token-auth/ (token)</button>
+            </div>
+        </div>
+        <div style="margin-top:8px;">Resposta:<pre id="api-test-output" style="white-space:pre-wrap;background:#f7f7f7;padding:8px;border-radius:6px;max-height:240px;overflow:auto;"></pre></div>
+    </div>
+
+    <h2>Atividades da API</h2>
+    <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.04);margin-bottom:12px;">
+        <div style="margin-bottom:8px;"><button id="btn-show-audits" class="btn">Mostrar atividades recentes</button></div>
+        <div id="audits-list" style="margin-top:8px;max-height:360px;overflow:auto;background:#f7f7f7;padding:8px;border-radius:6px;"></div>
+    </div>
+
+    <p><a href="/admin-area/" class="btn">Voltar</a></p>
+    <script>
+    async function pretty(o){ try{return JSON.stringify(o,null,2);}catch(e){return String(o);} }
+    async function runMultiple(fn, times){
+        const results = [];
+        for(let i=0;i<times;i++){
+            try{ results.push(await fn()); }catch(e){ results.push({error: String(e)}); }
+        }
+        return results;
+    }
+
+    document.getElementById('btn-list-eventos').addEventListener('click', async function(){
+        const out = document.getElementById('api-test-output'); out.textContent='...loading';
+        const times = parseInt(document.getElementById('times-list-eventos').value || '1',10) || 1;
+        try{
+            const results = await runMultiple(async ()=>{
+                const r = await fetch('/api/eventos/', {credentials:'same-origin'});
+                const ct = r.headers.get('content-type')||'';
+                if(ct.indexOf('application/json')!==-1){ return await r.json(); }
+                return await r.text();
+            }, times);
+            out.textContent = JSON.stringify(results,null,2);
+        }catch(e){ out.textContent = 'Erro: '+e; }
+    });
+
+    document.getElementById('btn-list-inscricoes').addEventListener('click', async function(){
+        const out = document.getElementById('api-test-output'); out.textContent='...loading';
+        const times = parseInt(document.getElementById('times-list-inscricoes').value || '1',10) || 1;
+        try{
+            const results = await runMultiple(async ()=>{
+                const r = await fetch('/api/inscricoes/', {credentials:'same-origin'});
+                const ct = r.headers.get('content-type')||'';
+                if(ct.indexOf('application/json')!==-1){ return await r.json(); }
+                return await r.text();
+            }, times);
+            out.textContent = JSON.stringify(results,null,2);
+        }catch(e){ out.textContent = 'Erro: '+e; }
+    });
+
+    document.getElementById('btn-post-inscricao').addEventListener('click', async function(){
+        const out = document.getElementById('api-test-output'); out.textContent='...loading';
+        const eventoId = (document.getElementById('inscrever-evento-id').value||'').trim();
+        if(!eventoId){ out.textContent='Preencha o campo de evento id.'; return; }
+        try{
+            const fd = new FormData(); fd.set('evento', eventoId);
+            const r = await fetch('/api/inscricoes/', {method:'POST', body: fd, credentials:'same-origin', headers: {'X-Requested-With':'XMLHttpRequest'}});
+            const ct = r.headers.get('content-type')||'';
+            let res = null;
+            if(ct.indexOf('application/json')!==-1) res = await r.json(); else res = await r.text();
+            out.textContent = JSON.stringify(res,null,2);
+        }catch(e){ out.textContent = 'Erro: '+e; }
+    });
+
+    document.getElementById('btn-get-token').addEventListener('click', async function(){
+        const out = document.getElementById('api-test-output'); out.textContent='...loading';
+        const u = (document.getElementById('token-username').value||'').trim();
+        const p = (document.getElementById('token-password').value||'').trim();
+        if(!u || !p){ out.textContent='Preencha usuário e senha.'; return; }
+        try{
+            const payload = {username: u, password: p};
+            const r = await fetch('/api-token-auth/', {method:'POST', body: JSON.stringify(payload), headers: {'Content-Type':'application/json'}});
+            const ct = r.headers.get('content-type')||'';
+            let res = null;
+            if(ct.indexOf('application/json')!==-1) res = await r.json(); else res = await r.text();
+            out.textContent = JSON.stringify(res,null,2);
+        }catch(e){ out.textContent = 'Erro: '+e; }
+    });
+
+    // Internal admin/test endpoints have been removed from the UI per request.
+
+    document.getElementById('btn-show-audits').addEventListener('click', async function(){
+        const box = document.getElementById('audits-list'); box.textContent='...loading';
+        try{
+            const r = await fetch('/api/admin-api/audits/', {credentials:'same-origin'});
+            if(!r.ok){ box.textContent='Erro ao obter auditoria: '+r.status; return; }
+            const j = await r.json();
+            if(!j.audits) { box.textContent = JSON.stringify(j); return; }
+            box.innerHTML='';
+            j.audits.forEach(a=>{
+                const u = a.usuario ? (a.usuario.username||a.usuario.id) : '-';
+                const el = document.createElement('div'); el.style.padding='6px'; el.style.borderBottom='1px solid #eee';
+                el.innerHTML = `<div style="font-weight:700;">${a.acao} — ${u} — ${a.data_hora}</div><div style="white-space:pre-wrap;margin-top:6px;">${a.detalhes||''}</div>`;
+                box.appendChild(el);
+            });
+        }catch(e){ box.textContent='Erro: '+e }
+    });
+    </script>
+</body>
+</html>
