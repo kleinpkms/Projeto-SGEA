@@ -234,6 +234,7 @@ def home(request):
         'show_admin': request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name__in=['Professor', 'Organizador']).exists()),
         'user_inscricoes_event_ids': list(inscricoes.values_list('evento_id', flat=True)),
         'is_organizador': request.user.groups.filter(name='Organizador').exists(),
+        'is_professor': request.user.groups.filter(name='Professor').exists(),
         'now': timezone.now(),
     })
     # evita cache da página autenticada
@@ -1348,7 +1349,14 @@ def admin_api_overview(request):
     """
     allowed = False
     try:
-        if request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists()):
+        # allow superusers always; otherwise allow staff/organizador but explicitly
+        # disallow users in the 'Professor' group even if they are staff
+        if request.user.is_authenticated and (
+            request.user.is_superuser or (
+                (request.user.is_staff or request.user.groups.filter(name='Organizador').exists())
+                and not request.user.groups.filter(name='Professor').exists()
+            )
+        ):
             allowed = True
     except Exception:
         allowed = False
@@ -1380,7 +1388,13 @@ def admin_api_audits(request):
     """
     # permission check: only staff/superuser or Organizadores
     try:
-        if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists())):
+        # same rule as admin_api_overview: superusers allowed; block 'Professor' group
+        if not (request.user.is_authenticated and (
+            request.user.is_superuser or (
+                (request.user.is_staff or request.user.groups.filter(name='Organizador').exists())
+                and not request.user.groups.filter(name='Professor').exists()
+            )
+        )):
             return JsonResponse({'error': 'Acesso negado'}, status=403)
     except Exception:
         return JsonResponse({'error': 'Acesso negado'}, status=403)
