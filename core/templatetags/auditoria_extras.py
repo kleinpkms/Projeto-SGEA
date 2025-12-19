@@ -6,11 +6,11 @@ register = template.Library()
 
 @register.filter(name='basename')
 def basename(value):
-    """Return the basename of a path or URL-like string."""
+    """Retorna o nome do arquivo de um path ou URL."""
     try:
         if not value:
             return ''
-        # if it looks like a URL, split on '/' and take last
+        # se parece URL, pega a última parte
         if '/' in value:
             return value.rstrip('/').split('/')[-1]
         return os.path.basename(value)
