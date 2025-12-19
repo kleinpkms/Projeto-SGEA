@@ -133,7 +133,7 @@
 					form.action = '';
 					form.querySelector('input[name="action"]').value = 'create_event';
 					submitBtn.textContent = 'Criar evento';
-					// hide HUD when cancelling
+					// oculta o HUD ao cancelar
 					hud.style.display = 'none';
 					document.getElementById('hud-title').textContent = 'Criar novo evento';
 					const hiddenStart = document.getElementById('hidden_start'); if(hiddenStart) hiddenStart.remove();
@@ -187,7 +187,7 @@
 					});
 				});
 
-				// add cancel button
+				// adicionar botão de cancelar
 				const cancelBtn = document.createElement('button'); cancelBtn.type='button'; cancelBtn.className='btn'; cancelBtn.style.marginLeft='8px'; cancelBtn.textContent='Cancelar';
 				cancelBtn.addEventListener('click', resetForm);
 				// avoid duplicating cancel button
@@ -198,7 +198,7 @@
 				// expose for AJAX handlers to reset state
 				window.resetEventForm = resetForm;
 
-				// close shortcuts when clicking outside (safe access to elements)
+				// fecha atalhos ao clicar fora (acesso seguro aos elementos)
 				document.addEventListener('click', function(ev){
 					setTimeout(function(){
 						try{
@@ -370,7 +370,15 @@
 				// build FormData and submit via fetch so we can update UI without reload
 				const fd = new FormData(form);
 				fetch(window.location.href, {method: 'POST', body: fd, credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
-				.then(r => r.json())
+				.then(async r => {
+					const text = await r.text();
+					const ct = (r.headers.get('content-type') || '');
+					if(ct.indexOf('application/json') !== -1){
+						try{ return JSON.parse(text); }catch(e){ return { status: 'error', message: 'Resposta JSON inválida', debug: text, status_code: r.status }; }
+					}
+					// not JSON: return object containing raw text for debugging
+					return { status: 'error', message: 'Resposta inesperada do servidor', debug: text, status_code: r.status };
+				})
 				.then(j => {
 					if(j && j.status === 'ok' && j.evento){
 						// update counters
@@ -402,9 +410,9 @@
 						// reset form/hide HUD (call shared reset so editing state is cleared)
 						try{ if(window.resetEventForm) window.resetEventForm(); else { document.getElementById('create-event-form').reset(); document.getElementById('events-hud').style.display='none'; } }catch(e){}
 					} else if(j && j.status === 'error'){
-						alert(j.message || 'Falha ao criar evento'); console.error(j);
+						alert(j.message || j.debug || 'Falha ao criar evento'); console.error(j);
 					} else {
-						alert('Falha ao criar evento'); console.error(j);
+						alert(j.message || j.debug || 'Falha ao criar evento'); console.error(j);
 					}
 				})
 				.catch(err=>{ console.error(err); alert('Erro ao criar evento'); });
