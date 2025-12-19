@@ -1,0 +1,15 @@
+<html>
+  <body style="font-family:Arial,Helvetica,sans-serif;color:#111;">
+    <div style="max-width:600px;margin:0 auto;padding:18px;border:1px solid #eee;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <img src="{{ logo_url }}" alt="SGEA" style="height:48px;border-radius:6px;"/>
+        <h2 style="color:#0a58ca;margin:0">Código de confirmação — {{ evento.nome }}</h2>
+      </div>
+      <p>Olá <strong>{{ user.get_full_name|default:user.username }}</strong>,</p>
+      <p>Foi gerado um código de confirmação para o evento <strong>{{ evento.nome }}</strong>:</p>
+      <div style="font-size:20px;padding:12px 16px;margin:12px 0;background:#f4f6fb;border-radius:6px;display:inline-block;letter-spacing:3px;font-weight:700">{{ code }}</div>
+      <p>Use este código para confirmar sua participação quando solicitado.</p>
+      <p>Atenciosamente,<br/>Equipe SGEA</p>
+    </div>
+  </body>
+</html>

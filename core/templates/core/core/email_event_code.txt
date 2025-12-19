@@ -1,0 +1,10 @@
+Olá {{ user.get_full_name|default:user.username }},
+
+Foi gerado um código de confirmação para o evento "{{ evento.nome }}":
+
+{{ code }}
+
+Use este código para confirmar sua participação quando solicitado.
+
+Atenciosamente,
+Equipe SGEA
