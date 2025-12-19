@@ -21,7 +21,7 @@ class Evento(models.Model):
 	data_fim = models.DateTimeField()
 	local = models.CharField(max_length=200)
 	vagas = models.PositiveIntegerField()
-	# duration stored in minutes to allow sub-hour durations
+	# duração em minutos (permite durações menores que 1h)
 	carga_horaria_minutos = models.PositiveIntegerField(default=240)
 	banner = models.ImageField(upload_to='banners/', validators=[validar_banner], blank=True, null=True)
 	responsavel = models.ForeignKey(User, on_delete=models.CASCADE, related_name='eventos_criados')
@@ -66,19 +66,18 @@ class Evento(models.Model):
 
 
 class Inscricao(models.Model):
-	# keep a nullable FK so the inscrição (and its certificado snapshot) survives
-	# even if the Evento is later removed
+	# FK nullable para manter inscrição mesmo se Evento for removido
 	evento = models.ForeignKey(Evento, on_delete=models.SET_NULL, null=True, blank=True, related_name='inscricoes')
 	participante = models.ForeignKey(User, on_delete=models.CASCADE, related_name='inscricoes')
 	data_inscricao = models.DateTimeField(auto_now_add=True)
-	# optional participant snapshot/contact fields collected at time of inscrição
+	# campos opcionais do participante capturados na inscrição
 	participante_email = models.EmailField(blank=True, null=True)
 	participante_first_name = models.CharField(max_length=150, blank=True, null=True)
 	participante_last_name = models.CharField(max_length=150, blank=True, null=True)
 	telefone = models.CharField(max_length=30, blank=True, null=True)
 	presenca_confirmada = models.BooleanField(default=False)
 	certificado_gerado = models.BooleanField(default=False)
-	# snapshot fields so the certificado remains valid even if the event changes
+	# snapshot do evento para manter certificado válido mesmo após mudanças
 	certificado_evento_nome = models.CharField(max_length=200, blank=True, null=True)
 	certificado_data_inicio = models.DateTimeField(blank=True, null=True)
 	certificado_local = models.CharField(max_length=200, blank=True, null=True)
@@ -103,7 +102,7 @@ class Inscricao(models.Model):
 		unique_together = ('evento', 'participante')
 
 	def clean(self):
-		# não permitir duplicatas (unique_together covers DB level)
+		# evita duplicatas (único governador pelo DB também)
 		if self.evento and self.evento.inscricoes.filter(participante=self.participante).exclude(pk=self.pk).exists():
 			raise ValidationError('Usuário já inscrito neste evento.')
 		# verificar vagas
