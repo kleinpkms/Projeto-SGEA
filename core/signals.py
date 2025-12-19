@@ -12,17 +12,14 @@ User = get_user_model()
 @receiver(post_save, sender=User)
 def enviar_email_boas_vindas(sender, instance, created, **kwargs):
 	if created:
-		# use safe audit helper to avoid failing during migrations
+		# registra criação no log (não enviar e-mail aqui — espera verificação)
 		log_audit(usuario=instance, acao='Criação de Usuário', detalhes=f'Novo usuário: {instance.username}')
-		assunto = 'Bem-vindo ao SGEA!'
-		mensagem = f"Olá, {instance.first_name or instance.username}! Bem-vindo ao SGEA."
-		send_mail(assunto, mensagem, settings.EMAIL_HOST_USER, [instance.email], fail_silently=False)
 
 
 
 @receiver(pre_delete, sender=None)
 def snapshot_inscricoes_before_event_delete(sender, instance, **kwargs):
-	# If an Evento is being deleted, ensure its inscrições keep a snapshot of event data.
+	# Ao deletar um Evento, preserva snapshot dos dados nas inscrições
 	try:
 		from .models import Evento, Inscricao
 	except Exception:
@@ -48,8 +45,7 @@ def snapshot_inscricoes_before_event_delete(sender, instance, **kwargs):
 			changed = True
 		if changed:
 			ins.save()
-		# remove from certificate registry when the event is deleted so the participant
-		# is not listed among certificated items for a removed event
+			# remove registro de certificado para não listar participante em evento removido
 		try:
 			if ins.certificado_gerado:
 				ins.certificado_gerado = False
