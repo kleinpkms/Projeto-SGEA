@@ -15,7 +15,7 @@
 				{% if show_admin %}
 					<a href="/admin-area/" class="btn" style="margin-right:8px; padding:8px 12px; background:transparent; color:white; border:1px solid rgba(255,255,255,0.18);">Admin</a>
 				{% endif %}
-				{% if (request.user.is_staff or request.user.is_superuser or is_organizador) and not is_professor %}
+				{% if show_admin and not is_professor %}
 					<a href="/api/admin-api/" class="btn" style="margin-right:8px; padding:8px 12px; background:transparent; color:white; border:1px solid rgba(255,255,255,0.18);">API</a>
 				{% endif %}
 				<div class="user-greeting-wrap" style="position:relative;">
