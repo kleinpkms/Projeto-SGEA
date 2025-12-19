@@ -6,7 +6,7 @@ class CoreConfig(AppConfig):
 	name = 'core'
 
 	def ready(self):
-		# import signal handlers to ensure they're registered
+		# importa signals para registrá-los
 		try:
 			from . import signals  # noqa: F401
 		except Exception:
