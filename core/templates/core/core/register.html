@@ -49,15 +49,15 @@
       </form>
       </div>
       <script>
-      // phone mask while keeping placeholder 'Telefone'
+      
       function phoneMask(v){ v = v.replace(/\D/g,'').slice(0,11); if(v.length<=2) return '('+v; if(v.length<=6) return '('+v.slice(0,2)+') '+v.slice(2); return '('+v.slice(0,2)+') '+v.slice(2,7)+'-'+v.slice(7); }
       const tel = document.getElementById('telefone');
       if(tel){ tel.addEventListener('input', function(){ this.value = phoneMask(this.value); }); tel.placeholder = 'Telefone'; }
 
-      // password visibility toggles
+     
       document.querySelectorAll('.toggle-password').forEach(function(b){ b.addEventListener('click', function(){ const t = b.getAttribute('data-target'); const inp = document.getElementById(t); if(!inp) return; inp.type = inp.type === 'password' ? 'text' : 'password'; }); });
 
-      // client-side validation for password match and strength
+      
       document.getElementById('register-form').addEventListener('submit', function(e){
         const p = document.getElementById('password').value || '';
         const pc = document.getElementById('password_confirm').value || '';
@@ -66,6 +66,12 @@
           e.preventDefault(); alert('Senha deve ter mínimo 8 caracteres e conter letras, números e caracteres especiais.'); return false;
         }
         if(p !== pc){ e.preventDefault(); alert('As senhas não coincidem.'); return false; }
+        
+        const telVal = (document.getElementById('telefone').value || '');
+        const digits = telVal.replace(/\D/g, '');
+        if(digits.startsWith('55')){ e.preventDefault(); alert('Não inclua o código do país (55). Informe apenas o DDD entre parênteses e o número.'); return false; }
+        const digitsLocal = digits;
+        if(digitsLocal.length < 10){ e.preventDefault(); alert('Telefone deve conter ao menos 10 dígitos.'); return false; }
       });
       </script>
     {% endif %}
