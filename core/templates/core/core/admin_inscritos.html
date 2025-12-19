@@ -44,7 +44,7 @@
   </table>
   <div style="margin-top:12px;"></div>
 <script>
-// intercept cancel forms to use fetch and remove row on success
+// intercepta formulários de cancelamento para usar fetch e remover a linha em caso de sucesso
 document.querySelectorAll('.cancel-form').forEach(function(f){
   f.addEventListener('submit', function(e){
     e.preventDefault();
@@ -59,8 +59,8 @@ document.querySelectorAll('.cancel-form').forEach(function(f){
     .catch(()=>alert('Erro'))
   })
 })
-// handle confirm-presence forms
-// when the checkbox changes, submit confirmation; keep form submit fallback
+// trata formulários de confirmação de presença
+// quando a checkbox muda, envia a confirmação; mantém fallback no submit do formulário
 document.querySelectorAll('.confirm-form').forEach(function(f){
   const checkbox = f.querySelector('.confirm-checkbox');
   const label = f.querySelector('.confirm-label');
@@ -98,21 +98,34 @@ document.querySelectorAll('.confirm-form').forEach(function(f){
 })
 </script>
 <script>
-// helper to read cookie
+// utilitário para ler cookie
 function getCookie(name){
   const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
   return v ? v.pop() : '';
 }
-// handle generate code button
+// manipula botão de gerar código
 const genBtn = document.getElementById('generate-code');
 if(genBtn){
   genBtn.addEventListener('click', function(){
     genBtn.disabled = true;
-    fetch('{% url "generate_confirmation_code" evento.id %}', {method:'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}})
-    .then(r=>r.json()).then(j=>{
-      if(j.code){ document.getElementById('code-display').innerHTML = 'Código atual: <span style="color:#000">'+j.code+'</span>'; }
-      else alert('Falha ao gerar código');
-    }).catch(()=>alert('Erro')).finally(()=> genBtn.disabled = false);
+    // if current user is Professor or Organizador, ask whether to send code by e-mail
+    const isProfOrOrg = {{ is_prof_or_org|yesno:'true,false' }};
+    function doGenerate(sendFlag){
+      const fd = new FormData();
+      if(sendFlag) fd.set('send','1');
+      fetch('{% url "generate_confirmation_code" evento.id %}', {method:'POST', body: fd, headers: {'X-CSRFToken': getCookie('csrftoken')}})
+      .then(r=>r.json()).then(j=>{
+        if(j.code){ document.getElementById('code-display').innerHTML = 'Código atual: <span style="color:#000">'+j.code+'</span>'; }
+        else alert('Falha ao gerar código');
+      }).catch(()=>alert('Erro')).finally(()=> genBtn.disabled = false);
+    }
+    if(isProfOrOrg){
+      // use site confirmation modal (already available) to ask if want to send by email
+      try{ showConfirm('Deseja enviar este código por e-mail para os inscritos deste evento?').then(function(ok){ doGenerate(!!ok); }); }
+      catch(e){ if(confirm('Deseja enviar este código por e-mail para os inscritos deste evento?')) doGenerate(true); else doGenerate(false); }
+    } else {
+      doGenerate(false);
+    }
   })
 }
 </script>
