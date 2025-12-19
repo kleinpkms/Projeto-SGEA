@@ -15,6 +15,9 @@
 				{% if show_admin %}
 					<a href="/admin-area/" class="btn" style="margin-right:8px; padding:8px 12px; background:transparent; color:white; border:1px solid rgba(255,255,255,0.18);">Admin</a>
 				{% endif %}
+				{% if request.user.is_staff or request.user.is_superuser or is_organizador %}
+					<a href="/api/admin-api/" class="btn" style="margin-right:8px; padding:8px 12px; background:transparent; color:white; border:1px solid rgba(255,255,255,0.18);">API</a>
+				{% endif %}
 				<div class="user-greeting-wrap" style="position:relative;">
 								<div style="display:flex;align-items:center;gap:8px;">
 									{% if request.user.profile and request.user.profile.photo %}
@@ -50,7 +53,7 @@
 		</nav>
 	</header>
 	<script>
-	// show HUD on hover with small delay to avoid flicker
+	// mostra o HUD no hover com pequeno atraso para evitar flicker
 	(function(){
 		const wrap = document.querySelector('.user-greeting-wrap');
 		const hud = document.getElementById('user-hud');
@@ -63,7 +66,7 @@
 		if(greeting){ greeting.setAttribute('tabindex','0'); greeting.addEventListener('focus', ()=>{ clearTimeout(tid); hud.style.display='block'}); greeting.addEventListener('blur', ()=>{ tid=setTimeout(()=>hud.style.display='none',200); }); }
 	})();
 
-	// (deprecated) inscreverHandler kept for compatibility but will not be used
+	// (deprecated) inscreverHandler mantido por compatibilidade, não será usado
 	function inscreverHandler(ev, eventId){
 		try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
 	}
@@ -194,7 +197,7 @@
 		</div>
 	</div>
 	<script>
-	// Ajax-based load-more that appends cards instead of navigating pages
+	// carregamento 'load-more' via Ajax que adiciona cards sem navegar páginas
 	(function(){
 		document.addEventListener('click', function(ev){
 			const a = ev.target.closest && ev.target.closest('.load-more');
@@ -214,10 +217,10 @@
 		});
 	})();
 
-	// cancel inline forms: submit via fetch to cancel an existing inscription
-	(function(){
-		// wait for DOMContentLoaded then show it. If modal is missing, create it programmatically
-		// so we never fall back to the browser `confirm` dialog.
+	// formulários de cancelamento inline: enviar via fetch para cancelar uma inscrição
+		(function(){
+			// aguarda DOMContentLoaded antes de mostrar o modal. Se o modal estiver ausente,
+			// cria-o programaticamente para não usar o diálogo nativo `confirm`.
 		function showSiteConfirm(msg){
 			return new Promise(function(resolve){
 				function attachAndShow(){
@@ -276,7 +279,7 @@
 		});
 	})();
 
-						// helper to update the vacancy counter in the UI for an event
+							// utilitário para atualizar o contador de vagas na UI de um evento
 						function updateVacancy(eventId, delta){
 							try{
 								const root = document.querySelector('[data-event-id="'+eventId+'"]');
@@ -291,7 +294,7 @@
 							}catch(e){ console.error('updateVacancy error', e); }
 						}
 
-						// create a cancel-inline form DOM and replace the inscrever-form
+						// cria um formulário cancel-inline e substitui o inscrever-form
 						function createCancelInline(eventId, csrfToken){
 							try{
 								if(!eventId) return;
