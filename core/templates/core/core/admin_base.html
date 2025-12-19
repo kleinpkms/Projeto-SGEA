@@ -42,7 +42,7 @@
       no.addEventListener('click', function(){ if(resolveCb) resolveCb(false); hide(); });
       yes.addEventListener('click', function(){ if(resolveCb) resolveCb(true); hide(); });
 
-      // delegate: intercept forms/buttons with class 'confirmable' or data-confirm
+      // delegação: intercepta forms/botões com a classe 'confirmable' ou atributo data-confirm
       document.addEventListener('submit', function(ev){
         const f = ev.target;
         if(f && f.classList && f.classList.contains('confirmable')){
