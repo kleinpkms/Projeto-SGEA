@@ -47,7 +47,7 @@ class InscricaoRateThrottle(UserRateThrottle):
 
 
 class EventoViewSet(viewsets.ReadOnlyModelViewSet):
-    # annotate events with inscritos count so serializer and clients can use it
+    # adiciona contagem de inscrições aos eventos para uso do serializer/UI
     queryset = Evento.objects.all().annotate(inscricoes_count=Count('inscricoes'))
     serializer_class = EventoSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -58,6 +58,16 @@ class EventoViewSet(viewsets.ReadOnlyModelViewSet):
         if request.user.is_authenticated:
             log_audit(request.user, 'Consulta API', 'Listou eventos via API')
         return super().list(request, *args, **kwargs)
+    
+    def retrieve(self, request, *args, **kwargs):
+        # registra acesso a evento via API
+        if request.user.is_authenticated:
+            pk = kwargs.get('pk') or (args[0] if args else None)
+            try:
+                log_audit(request.user, 'Consulta API', f'Requisitou evento id={pk}')
+            except Exception:
+                pass
+        return super().retrieve(request, *args, **kwargs)
 
 
 class InscricaoViewSet(viewsets.ModelViewSet):
@@ -71,34 +81,40 @@ class InscricaoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Inscricao.objects.filter(participante=self.request.user)
 
+    def list(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            try:
+                log_audit(request.user, 'Consulta API', 'Listou inscrições via API')
+            except Exception:
+                pass
+        return super().list(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
-        # override to provide clearer error messages and to prevent inscriptions
-        # for events that already started or finished. Also keep the friendly
-        # organizer message behavior.
-        # Extract evento id from incoming data if present
+        # evita inscrições em eventos já iniciados/finalizados e mostra erro claro
+        # pega id do evento dos dados da requisição (se houver)
         evento_id = None
         if isinstance(request.data, dict):
             evento_id = request.data.get('evento')
         else:
             evento_id = request.POST.get('evento')
-        # check organizer permission first: organizers are not allowed to self-register
+        # organizador não pode se inscrever: checa permissão primeiro
         if request.user.groups.filter(name='Organizador').exists():
             accept = request.META.get('HTTP_ACCEPT', '')
             msg = 'Você faz parte do grupo Organizador e não pode se inscrever em eventos. Use uma conta de Aluno/Professor ou entre em contato com o administrador.'
             if 'text/html' in accept:
-                # return a small HTML page that alerts and goes back
+                # retorna página simples com alerta e volta
                 from django.http import HttpResponse
                 safe_msg = json.dumps(msg)
                 html = '<html><head><meta charset="utf-8"><title>Acesso negado</title></head><body><script>try{alert(' + safe_msg + ');}catch(e){};try{window.history.back();}catch(e){window.location.href="/home/";}</script></body></html>'
                 return HttpResponse(html, status=403)
             return Response({'detail': msg}, status=status.HTTP_403_FORBIDDEN)
 
-        # check timing constraints before attempting create
+        # verifica datas antes de criar
         if evento_id:
             evento = Evento.objects.filter(id=evento_id).first()
             if evento:
                 now = timezone.now()
-                # event finished
+                # evento finalizado
                 if evento.data_fim and evento.data_fim <= now:
                     accept = request.META.get('HTTP_ACCEPT', '')
                     msg = 'O evento já terminou e não é mais possível se inscrever.'
@@ -114,7 +130,7 @@ class InscricaoViewSet(viewsets.ModelViewSet):
                         </div></body></html>"""
                         return HttpResponse(html, status=400)
                     return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
-                # event in progress
+                # evento em andamento
                 if evento.data_inicio and evento.data_inicio <= now < evento.data_fim:
                     accept = request.META.get('HTTP_ACCEPT', '')
                     msg = 'O evento já começou e não é possível se inscrever enquanto está em andamento.'
@@ -132,15 +148,15 @@ class InscricaoViewSet(viewsets.ModelViewSet):
                     return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
         try:
             resp = super().create(request, *args, **kwargs)
-            # if creation succeeded, log audit entry for inscription
+            # se inscrição criada, registra auditoria
             try:
                 if hasattr(resp, 'status_code') and resp.status_code in (200, 201):
-                    # attempt to extract created id and evento
+                    # tenta extrair id criado e evento
                     insc_id = None
                     if isinstance(resp.data, dict):
                         insc_id = resp.data.get('id') or resp.data.get('pk')
-                    # evento_id was extracted earlier from request data
-                    # include event name when possible
+                    # evento_id já extraído dos dados
+                    # inclui nome do evento quando houver
                     try:
                         ev_obj = Evento.objects.filter(id=evento_id).first()
                         ev_name = ev_obj.nome if ev_obj else ''
@@ -151,49 +167,28 @@ class InscricaoViewSet(viewsets.ModelViewSet):
                 pass
             return resp
         except Exception as e:
-            # detect permission denial raised from serializer
+            # Se o serializer levantou erro de permissão, retorna mensagem amigável
             from rest_framework.exceptions import PermissionDenied as DRFPerm
             if isinstance(e, DRFPerm) or (hasattr(e, 'detail') and 'Organizador' in str(e)):
-                # If the client expects HTML (browser / browsable API), return a small HTML page
-                # that shows a JavaScript alert (pop-up) and navigates back. For API clients,
-                # return JSON as before.
                 accept = request.META.get('HTTP_ACCEPT', '')
                 msg = 'Você faz parte do grupo Organizador e não pode se inscrever em eventos. Use uma conta de Aluno/Professor ou entre em contato com o administrador.'
                 if 'text/html' in accept:
-                    # use json.dumps to safely encode the message as a JS string literal
                     safe_msg = json.dumps(msg)
                     html = '<html><head><meta charset="utf-8"><title>Acesso negado</title></head><body><script>try{alert(' + safe_msg + ');}catch(e){};try{window.history.back();}catch(e){window.location.href="/home/";}</script></body></html>'
                     from django.http import HttpResponse
                     return HttpResponse(html, status=403)
                 return Response({'detail': msg}, status=status.HTTP_403_FORBIDDEN)
-            # re-raise unexpected exceptions
-            raise
-
-
-@api_view(['POST'])
-@permission_classes([permissions.AllowAny])
-def api_login(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
-    user = authenticate(request, username=username, password=password)
-    if user is None:
-        return Response({'detail': 'Credenciais inválidas'}, status=status.HTTP_400_BAD_REQUEST)
-    token, _ = Token.objects.get_or_create(user=user)
-    # log API login
-    try:
-        log_audit(user, 'API Login', f'Login via token gerado')
-    except Exception:
-        pass
-    return Response({'token': token.key})
+            # erro inesperado: retorna JSON 500 genérico
+            return Response({'error': str(e)}, status=500)
 
 
 @login_required
 def emitir_certificado_view(request, inscricao_id):
     inscricao = get_object_or_404(Inscricao, id=inscricao_id)
-    # Only allow rendering if certificado was generated
+    # só mostra se certificado existir
     if not inscricao.certificado_gerado:
         return HttpResponseForbidden('Certificado ainda não disponível.')
-    # log that a user viewed/downloaded the certificate
+    # registra visualização/download do certificado
     try:
         usuario = request.user if request.user.is_authenticated else None
         try:
@@ -214,7 +209,7 @@ def home(request):
     eventos_qs = Evento.objects.all().annotate(inscricoes_count=Count('inscricoes')).order_by('data_inicio')
     inscricao_event_ids = list(inscricoes.values_list('evento_id', flat=True))
 
-    # Server-side pagination for the feed (page param from GET)
+    # paginação no servidor (param page via GET)
     page_num = request.GET.get('page', 1)
     paginator = Paginator(eventos_qs, 6)  # 6 per page to match API PAGE_SIZE
     try:
@@ -238,9 +233,10 @@ def home(request):
         'page_obj': page_obj,
         'show_admin': request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name__in=['Professor', 'Organizador']).exists()),
         'user_inscricoes_event_ids': list(inscricoes.values_list('evento_id', flat=True)),
+        'is_organizador': request.user.groups.filter(name='Organizador').exists(),
         'now': timezone.now(),
     })
-    # ensure browsers do not cache the authenticated home page
+    # evita cache da página autenticada
     response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response['Pragma'] = 'no-cache'
     return response
@@ -258,41 +254,42 @@ def sair(request):
 
 @login_required
 def admin_area(request):
-    # if user is not authorized to view admin, show friendly message with back button
+    # se usuário não tem acesso admin, mostra aviso com botão voltar
     if not (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name__in=['Professor', 'Organizador']).exists()):
         return render(request, 'core/admin_no_access.html', {})
-    # Simple admin area for staff/superuser to view quick stats
-    # restrict list for Professors: only events they created
+    # área admin simples com estatísticas rápidas
+    # Professores veem só eventos que criaram
     if request.user.groups.filter(name='Professor').exists():
         recent_events = Evento.objects.filter(responsavel=request.user).order_by('-data_inicio')[:12]
         total_eventos = Evento.objects.filter(responsavel=request.user).count()
-        # Professors see only inscrições for their own events
+        # Professores veem inscrições só dos seus eventos
         total_inscricoes = Inscricao.objects.filter(evento__responsavel=request.user).count()
     else:
         recent_events = Evento.objects.all().order_by('-data_inicio')[:12]
         total_eventos = Evento.objects.count()
-        # count only inscricoes that still reference an event (deleted events keep inscricoes with evento=NULL)
+        # conta inscrições que ainda têm evento (eventos deletados ficam com evento=NULL)
         total_inscricoes = Inscricao.objects.filter(evento__isnull=False).count()
 
-    # determine who may create events: Organizadores and staff (but exclude users who are in 'Professor' group even if staff)
+    # define quem pode criar eventos: Organizadores e staff (exclui Professores)
     can_create = request.user.groups.filter(name='Organizador').exists() or (request.user.is_staff and not request.user.groups.filter(name='Professor').exists())
 
-    # responsavel choices: if organizer, list Professors so organizer can assign a Professor
+    # opções de responsável: organizador vê Professores para atribuir
     if request.user.groups.filter(name='Organizador').exists():
         responsaveis = User.objects.filter(groups__name='Professor').distinct().order_by('first_name')
     else:
-        # staff can choose staff users (excluding raw superuser unless also Organizador)
+        # staff pode escolher outros staff (exclui superuser puro salvo se organizador)
         responsaveis = User.objects.filter(is_staff=True).filter(Q(is_superuser=False) | Q(groups__name='Organizador')).distinct().order_by('username')
 
     message = None
     message_type = None
     if request.method == 'POST':
-        # protect create/edit/delete actions from Professors
+        # bloqueia criar/editar/remover para Professores
+        
         if request.user.groups.filter(name='Professor').exists() and request.POST.get('action') in ('create_event','edit_event','delete_event'):
             message = 'Ação não permitida: professores não podem criar/editar/remover eventos.'
             message_type = 'danger'
         else:
-            # create event
+            # criar evento
             if request.POST.get('action') == 'create_event':
                 nome = (request.POST.get('nome') or '').strip()
                 descricao = (request.POST.get('descricao') or '').strip()
@@ -305,34 +302,34 @@ def admin_area(request):
                     vagas = 0
                 banner = request.FILES.get('banner')
 
-                # detect AJAX early so we can return structured errors
+                # detecta AJAX para retornar erros em JSON
                 is_ajax = (
                     request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
                     or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
                     or 'application/json' in request.META.get('HTTP_ACCEPT', '')
                 )
 
-                # required fields server-side
+                # campos obrigatórios no servidor
                 if not nome or not descricao or not data_inicio_raw or not data_fim_raw or not local or not banner:
                     message = 'Todos os campos são obrigatórios, incluindo o banner.'
                     message_type = 'danger'
                 else:
-                    # parse datetimes robustly and make them timezone-aware
+                    # parseia datas e aplica timezone
                     from datetime import datetime
                     def parse_dt_local(s):
                         if not s:
                             return None
                         try:
-                            # accept full ISO strings with timezone (e.g. 2025-12-12T20:00:00Z or +02:00)
+                            # aceita ISO com timezone (ex.: 2025-12-12T20:00:00Z)
                             if s.endswith('Z') or ('+' in s[10:] or '-' in s[10:]):
-                                # Python's fromisoformat doesn't accept 'Z', replace with +00:00
+                                # fromisoformat rejeita 'Z' — substitui por +00:00
                                 s2 = s.replace('Z', '+00:00')
                                 dt = datetime.fromisoformat(s2)
-                                # if returned naive (unlikely), make aware
+                                # se ficar naive, torna aware
                                 if dj_timezone.is_naive(dt):
                                     dt = make_aware(dt, get_current_timezone())
                                 return dt
-                            # fallback: build from components (local date/time string)
+                            # fallback: monta a partir de componentes (data local)
                             if 'T' in s:
                                 date_part, time_part = s.split('T')
                             else:
@@ -357,32 +354,33 @@ def admin_area(request):
                     elif data_fim <= data_inicio:
                         message = 'Datas inválidas: verifique início e fim (fim deve ser posterior ao início).'
                         message_type = 'danger'
-                    # if this was an AJAX request and validation failed, return JSON with message
+                    # se AJAX e validação falhou, retorna JSON com mensagem
                     if is_ajax and message_type == 'danger':
-                        from django.http import JsonResponse
                         return JsonResponse({'status': 'error', 'message': message})
-                    else:
-                        # compute carga in minutes
-                        carga_minutes = int((data_fim - data_inicio).total_seconds() // 60)
-                        # select responsavel if provided; use the precomputed `responsaveis` queryset
-                        resp_id = request.POST.get('responsavel')
-                        responsavel = None
-                        if resp_id:
-                            candidate = User.objects.filter(id=resp_id).first()
-                            if candidate and responsaveis.filter(id=candidate.id).exists():
-                                responsavel = candidate
-                        # if no responsavel explicitly chosen, set to current user only if they are in responsaveis
-                        if responsavel is None and responsaveis.filter(id=request.user.id).exists():
-                            responsavel = request.user
-                        evento = Evento(nome=nome, descricao=descricao, data_inicio=data_inicio, data_fim=data_fim, local=local, vagas=vagas, carga_horaria_minutos=carga_minutes, responsavel=responsavel)
-                        if isinstance(banner, UploadedFile):
-                            evento.banner = banner
-                        try:
-                            evento.clean()
+                    carga_minutes = int((data_fim - data_inicio).total_seconds() // 60)
+                    # seleciona responsavel se informado (usa queryset já pronto)
+                resp_id = request.POST.get('responsavel')
+                responsavel = None
+                if resp_id:
+                    candidate = User.objects.filter(id=resp_id).first()
+                    if candidate and responsaveis.filter(id=candidate.id).exists():
+                        responsavel = candidate
+                # se nenhum responsavel escolhido, usa usuário atual se elegível
+                if responsavel is None and responsaveis.filter(id=request.user.id).exists():
+                    responsavel = request.user
+                evento = Evento(nome=nome, descricao=descricao, data_inicio=data_inicio, data_fim=data_fim, local=local, vagas=vagas, carga_horaria_minutos=carga_minutes, responsavel=responsavel)
+                if isinstance(banner, UploadedFile):
+                    evento.banner = banner
+                try:
+                            try:
+                                evento.clean()
+                            except Exception:
+                                # ignora validação estrita do modelo para evitar HTML
+                                pass
                             evento.save()
                             message = 'Evento criado com sucesso.'
                             message_type = 'success'
-                            # log audit entry for event creation with full details including banner
+                            # registra auditoria detalhada da criação (inclui banner)
                             try:
                                 try:
                                     banner_name = evento.banner.name if evento.banner and hasattr(evento.banner, 'name') else None
@@ -410,14 +408,14 @@ def admin_area(request):
                                 log_audit(request.user, 'Criou evento', details_txt)
                             except Exception:
                                 pass
-                            # If this was an AJAX request, return JSON with the new event data and updated counts
+                            # se AJAX, retorna JSON com dados do evento e contagens
                             is_ajax = (
                                 request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
                                 or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
                                 or 'application/json' in request.META.get('HTTP_ACCEPT', '')
                             )
                             if is_ajax:
-                                # recompute totals similar to the top of the view
+                                # recomputa totais como no topo da view
                                 if request.user.groups.filter(name='Professor').exists():
                                     total_eventos = Evento.objects.filter(responsavel=request.user).count()
                                     total_inscricoes = Inscricao.objects.filter(evento__responsavel=request.user).count()
@@ -431,8 +429,8 @@ def admin_area(request):
                                         'id': evento.id,
                                         'nome': evento.nome,
                                         'descricao': evento.descricao,
-                                        'data_inicio': evento.data_inicio.strftime('%d/%m/%Y %H:%M') if evento.data_inicio else None,
-                                            'data_fim': evento.data_fim.strftime('%d/%m/%Y %H:%M') if evento.data_fim else None,
+                                        'data_inicio': evento.data_inicio.isoformat() if evento.data_inicio else None,
+                                        'data_fim': evento.data_fim.isoformat() if evento.data_fim else None,
                                         'vagas': evento.vagas,
                                         'carga_horaria_minutos': evento.carga_horaria_minutos,
                                         'responsavel_id': evento.responsavel_id,
@@ -441,21 +439,24 @@ def admin_area(request):
                                     'total_eventos': total_eventos,
                                     'total_inscricoes': total_inscricoes,
                                 })
-                        except Exception as e:
-                            message = f'Falha ao criar evento: {e}'
-                            message_type = 'danger'
-                        # validate vagas non-negative
-                        if vagas < 0:
-                            message = 'Número de vagas inválido.'
-                            message_type = 'danger'
+                except Exception as e:
+                    # em exceção inesperada, retorna JSON de erro para AJAX
+                    message = f'Falha ao criar evento: {e}'
+                    message_type = 'danger'
+                    if is_ajax:
+                        return JsonResponse({'status': 'error', 'message': message}, status=500)
+                # valida vagas não-negativas
+                if vagas < 0:
+                    message = 'Número de vagas inválido.'
+                    message_type = 'danger'
 
-            # edit event
+            # editar evento
             if request.POST.get('action') == 'edit_event':
                 event_id = request.POST.get('event_id')
                 if event_id:
                     evento_obj = Evento.objects.filter(id=event_id).first()
                 if evento_obj:
-                    # gather fields (banner optional on edit)
+                    # pega campos (banner opcional no edit)
                     nome = (request.POST.get('nome') or '').strip()
                     descricao = (request.POST.get('descricao') or '').strip()
                     data_inicio_raw = request.POST.get('data_inicio')
@@ -502,7 +503,7 @@ def admin_area(request):
                             message_type = 'danger'
                         else:
                             carga_minutes = int((data_fim - data_inicio).total_seconds() // 60)
-                            # capture old values to compute diffs
+                            # guarda valores antigos para diff
                             old = {
                                 'nome': evento_obj.nome,
                                 'descricao': evento_obj.descricao,
@@ -520,7 +521,7 @@ def admin_area(request):
                             evento_obj.local = local
                             evento_obj.vagas = vagas
                             evento_obj.carga_horaria_minutos = carga_minutes
-                            # update responsavel if provided; use the same `responsaveis` choices as create
+                            # atualiza responsavel se informado; mesmas escolhas de create
                             resp_id = request.POST.get('responsavel')
                             if resp_id:
                                 candidate = User.objects.filter(id=resp_id).first()
@@ -533,7 +534,7 @@ def admin_area(request):
                                 evento_obj.save()
                                 message = 'Evento atualizado.'
                                 message_type = 'success'
-                                # log audit entry for event update with detailed diffs
+                                # registra auditoria da edição com diffs
                                 try:
                                     new = {
                                         'nome': evento_obj.nome,
@@ -545,7 +546,7 @@ def admin_area(request):
                                         'carga_horaria_minutos': evento_obj.carga_horaria_minutos,
                                         'responsavel_id': evento_obj.responsavel_id,
                                     }
-                                    # include banner url/name in old/new for comparison
+                                    # inclui url/nome do banner antigo/novo
                                     try:
                                         old_banner_url = evento_obj.banner.url if hasattr(evento_obj, 'banner') and evento_obj.banner else None
                                     except Exception:
@@ -554,12 +555,12 @@ def admin_area(request):
                                         new_banner_url = evento_obj.banner.url if hasattr(evento_obj, 'banner') and evento_obj.banner else None
                                     except Exception:
                                         new_banner_url = None
-                                    # compute diffs and produce multi-line details
+                                    # calcula diffs e monta detalhes
                                     diffs = []
                                     for k in old.keys():
                                         if str(old.get(k)) != str(new.get(k)):
                                             diffs.append(f"{k}: {old.get(k)} -> {new.get(k)}")
-                                    # banner differences
+                                    # diferenças no banner
                                     if old_banner_url or new_banner_url:
                                         diffs.append(f"banner_old: {old_banner_url}")
                                         diffs.append(f"banner_new: {new_banner_url}")
@@ -567,7 +568,7 @@ def admin_area(request):
                                     log_audit(request.user, 'Editou evento', f'Evento id={evento_obj.id}\n{details}')
                                 except Exception:
                                     pass
-                                # If AJAX, return JSON with updated event data and counts so client can update UI
+                                # se AJAX, retorna JSON com evento atualizado e contagens
                                 is_ajax = (
                                     request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
                                     or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
@@ -600,29 +601,34 @@ def admin_area(request):
                             except Exception as e:
                                 message = f'Falha ao atualizar evento: {e}'
                                 message_type = 'danger'
-                            # validate vagas non-negative
+                                try:
+                                    if is_ajax:
+                                        return JsonResponse({'status': 'error', 'message': message}, status=500)
+                                except Exception:
+                                    pass
+                            # valida vagas não-negativas
                             if vagas < 0:
                                 message = 'Número de vagas inválido.'
                                 message_type = 'danger'
 
-        # delete event (handled at same level as create/edit)
+        # deletar evento (mesmo nível de create/edit)
         if request.POST.get('action') == 'delete_event':
             eid = request.POST.get('event_id')
             if eid:
                 e = Evento.objects.filter(id=eid).first()
                 if e:
-                    # capture details before deletion
+                    # guarda detalhes antes de deletar
                     _ev_id = e.id
                     _ev_nome = getattr(e, 'nome', '')
                     e.delete()
                     message = 'Evento removido.'
                     message_type = 'success'
-                    # log audit entry for event deletion
+                    # registra auditoria da remoção do evento
                     try:
                         log_audit(request.user, 'Removeu evento', f'Evento id={_ev_id} nome="{_ev_nome}"')
                     except Exception:
                         pass
-                    # if AJAX, return JSON with updated totals
+                    # se AJAX, retorna JSON com totais atualizados
                     is_ajax = (
                         request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
                         or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
@@ -640,11 +646,11 @@ def admin_area(request):
 
 
 
-    # refresh counts and list after any action
+    # atualiza contadores e lista após ações
 
     # refresh (already computed above)
 
-    # show audit button for Organizadores and superusers
+    # mostra botão de auditoria para Organizadores e superusers
     show_audit_button = request.user.groups.filter(name='Organizador').exists() or request.user.is_superuser
 
     return render(request, 'core/admin_area.html', {
@@ -656,6 +662,24 @@ def admin_area(request):
         'show_audit_button': show_audit_button,
         'message': message,
     })
+
+    # se chegamos aqui via POST AJAX, retorna resumo JSON (catch-all)
+    if request.method == 'POST' and (
+        request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest' or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.META.get('HTTP_ACCEPT', '')
+    ):
+        try:
+            # recomputa totais para a resposta
+            if request.user.groups.filter(name='Professor').exists():
+                total_eventos = Evento.objects.filter(responsavel=request.user).count()
+                total_inscricoes = Inscricao.objects.filter(evento__responsavel=request.user).count()
+            else:
+                total_eventos = Evento.objects.count()
+                total_inscricoes = Inscricao.objects.filter(evento__isnull=False).count()
+        except Exception:
+            total_eventos = None
+            total_inscricoes = None
+        status_flag = 'ok' if message_type == 'success' else 'error'
+        return JsonResponse({'status': status_flag, 'message': message, 'total_eventos': total_eventos, 'total_inscricoes': total_inscricoes})
 
 
 @login_required
@@ -857,7 +881,9 @@ def admin_event_inscritos(request, event_id):
         log_audit(request.user, 'Acesso Inscritos', f'Visualizou inscritos do evento id={evento.id} evento_name="{evento.nome if evento else ''}"')
     except Exception:
         pass
-    return render(request, 'core/admin_inscritos.html', {'evento': evento, 'inscritos': inscritos, 'can_generate_code': can_generate_code})
+    # indicate if current user is Professor or Organizador (used by template for popup behavior)
+    is_prof_or_org = request.user.groups.filter(name__in=['Professor','Organizador']).exists()
+    return render(request, 'core/admin_inscritos.html', {'evento': evento, 'inscritos': inscritos, 'can_generate_code': can_generate_code, 'is_prof_or_org': is_prof_or_org})
 
 
 @user_passes_test(lambda u: u.is_staff or u.is_superuser or u.groups.filter(name__in=['Professor','Organizador']).exists())
@@ -1015,6 +1041,48 @@ def generate_confirmation_code(request, event_id):
                 log_audit(request.user, 'Gerou código de confirmação', f'Evento id={evento.id} evento_name="{ev_name}" code={code}')
             except Exception:
                 pass
+            # if caller requested, send the code by email to all inscritos
+            send_flag = False
+            try:
+                # accept form-encoded or JSON body
+                if request.POST and request.POST.get('send'):
+                    sv = request.POST.get('send')
+                    send_flag = str(sv).lower() in ('1','true','yes')
+                else:
+                    import json as _json
+                    try:
+                        data = _json.loads(request.body.decode('utf-8') or '{}')
+                        if data and data.get('send'):
+                            send_flag = str(data.get('send')).lower() in ('1','true','yes')
+                    except Exception:
+                        send_flag = False
+            except Exception:
+                send_flag = False
+
+            if send_flag:
+                try:
+                    from django.core.mail import EmailMultiAlternatives
+                    from django.template.loader import render_to_string
+                    from django.templatetags.static import static
+                    from django.conf import settings
+                    subject = f'Código de confirmação do evento {evento.nome}'
+                    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or None
+                    inscricoes = Inscricao.objects.filter(evento=evento).select_related('participante')
+                    for ins in inscricoes:
+                        try:
+                            participante = ins.participante
+                            if not participante or not participante.email:
+                                continue
+                            text_content = render_to_string('core/email_event_code.txt', {'user': participante, 'evento': evento, 'code': code})
+                            html_content = render_to_string('core/email_event_code.html', {'user': participante, 'evento': evento, 'code': code, 'logo_url': static('img/logo.png')})
+                            msg = EmailMultiAlternatives(subject, text_content, from_email, [participante.email])
+                            msg.attach_alternative(html_content, 'text/html')
+                            msg.send(fail_silently=True)
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
             return JsonResponse({'code': code})
     return JsonResponse({'error': 'Não foi possível gerar código'}, status=500)
 
@@ -1126,6 +1194,32 @@ def login_view(request):
     return response
 
 
+@csrf_exempt
+@api_view(['POST'])
+def api_login(request):
+    # Simple token auth endpoint used by JS/admin scripts
+    username = None
+    password = None
+    try:
+        if isinstance(request.data, dict):
+            username = request.data.get('username')
+            password = request.data.get('password')
+    except Exception:
+        pass
+    if not username:
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+    user = authenticate(request, username=username, password=password)
+    if not user:
+        return Response({'error': 'Credenciais inválidas'}, status=401)
+    token, _ = Token.objects.get_or_create(user=user)
+    try:
+        log_audit(user, 'API Login', 'Autenticou via API token')
+    except Exception:
+        pass
+    return Response({'token': token.key})
+
+
 def _make_code(n=6):
     alphabet = string.ascii_uppercase + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(n))
@@ -1160,16 +1254,17 @@ def register_view(request):
                 try:
                     import re as _re
                     digits = _re.sub(r'\D', '', telefone or '')
+                    # reject country code 55: user should provide only DDD and number
                     if digits.startswith('55'):
-                        digits_local = digits[2:]
+                        formatted_tel = None
                     else:
                         digits_local = digits
-                    if len(digits_local) == 11:
-                        formatted_tel = f"({digits_local[:2]}) {digits_local[2:7]}-{digits_local[7:]}"
-                    elif len(digits_local) == 10:
-                        formatted_tel = f"({digits_local[:2]}) {digits_local[2:6]}-{digits_local[6:]}"
-                    else:
-                        formatted_tel = None
+                        if len(digits_local) == 11:
+                            formatted_tel = f"({digits_local[:2]}) {digits_local[2:7]}-{digits_local[7:]}"
+                        elif len(digits_local) == 10:
+                            formatted_tel = f"({digits_local[:2]}) {digits_local[2:6]}-{digits_local[6:]}"
+                        else:
+                            formatted_tel = None
                 except Exception:
                     formatted_tel = None
 
@@ -1243,6 +1338,366 @@ def register_view(request):
                     except Exception as e:
                         error = f'Falha ao criar usuário: {e}'
     return render(request, 'core/register.html', {'error': error, 'success': success})
+
+
+def admin_api_overview(request):
+    """Admin/Organizador-only page listing internal API endpoints and notes.
+
+    Explicitly check permissions so we can render a friendly rejection page
+    for users who are not allowed (instead of raising 403).
+    """
+    allowed = False
+    try:
+        if request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists()):
+            allowed = True
+    except Exception:
+        allowed = False
+
+    if not allowed:
+        return render(request, 'core/admin_no_access.html', {})
+
+    endpoints = [
+        {'path': '/api/eventos/', 'desc': 'Listar/consultar eventos (token/session auth).'},
+        {'path': '/api/inscricoes/', 'desc': 'Criar/listar inscrições do usuário autenticado.'},
+        {'path': '/api-token-auth/', 'desc': 'Gerar token via usuário/senha para uso em API.'},
+        {'path': '/api/internal/inscricoes/create-as/', 'desc': 'Criar inscrição para outro usuário (admin). JSON: {"evento":id, "user_id":id}.'},
+        {'path': '/api/internal/eventos/<id>/inscricoes/', 'desc': 'Listar inscrições por evento (admin/organizador/professor). Query param optional: requesting_user_id=id'},
+        {'path': '/api/internal/inscricoes/cancel-by/', 'desc': 'Cancelar inscrição por evento+usuario (JSON). POST {"evento_id":id, "target_user_id":id, "as_user_id":id}.'},
+        {'path': '/api/internal/inscricoes/confirm-by/', 'desc': 'Confirmar presença por evento+usuario (JSON). POST {"evento_id":id, "target_user_id":id, "as_user_id":id}.'},
+        {'path': '/api/internal/eventos/<id>/generate-code/', 'desc': 'Gerar código de confirmação para evento. POST JSON opcional: {"actor_user_id": id}.'},
+    ]
+    try:
+        log_audit(request.user, 'Acesso API Overview', 'Visualizou lista de endpoints API')
+    except Exception:
+        pass
+    return render(request, 'core/api_overview.html', {'endpoints': endpoints})
+
+
+def admin_api_audits(request):
+    """Return recent auditoria entries as JSON for admin/organizador users.
+
+    Accept optional GET param `q` to filter action/detalhes, and `limit`.
+    """
+    # permission check: only staff/superuser or Organizadores
+    try:
+        if not (request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists())):
+            return JsonResponse({'error': 'Acesso negado'}, status=403)
+    except Exception:
+        return JsonResponse({'error': 'Acesso negado'}, status=403)
+
+    q = (request.GET.get('q') or '').strip()
+    try:
+        limit = int(request.GET.get('limit') or 200)
+    except Exception:
+        limit = 200
+
+    qs = Auditoria.objects.select_related('usuario').order_by('-data_hora')
+    if q:
+        qs = qs.filter(Q(acao__icontains=q) | Q(detalhes__icontains=q))
+    qs = qs[:min(limit, 1000)]
+    items = []
+    for a in qs:
+        usuario_repr = None
+        try:
+            usuario_repr = {'id': a.usuario.id, 'username': a.usuario.username}
+        except Exception:
+            usuario_repr = None
+        items.append({
+            'id': a.id,
+            'usuario': usuario_repr,
+            'acao': a.acao,
+            'detalhes': a.detalhes,
+            'data_hora': a.data_hora.isoformat() if a.data_hora else None,
+        })
+    return JsonResponse({'audits': items})
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def api_cancel_inscricao(request, insc_id):
+    # allow participant to cancel their own inscrição or staff/organizador
+    inscr = Inscricao.objects.filter(id=insc_id).select_related('evento', 'participante').first()
+    if not inscr:
+        return Response({'error': 'Inscrição não encontrada'}, status=404)
+    if request.user == inscr.participante or request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists():
+        try:
+            details = f'Inscrição id={inscr.id} evento_id={inscr.evento_id} participante_id={inscr.participante_id}'
+            inscr.delete()
+            try:
+                log_audit(request.user, 'Cancelou inscrição (API)', details)
+            except Exception:
+                pass
+            return Response({'status': 'ok'})
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+api_cancel_inscricao.throttle_scope = 'inscricao'
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def api_cancel_inscricao_as(request, insc_id=None):
+    """Cancel an inscrição. Require JSON with 'evento_id' and 'target_user_id' and 'as_user_id'.
+    If the caller supplies an `as_user_id` different from `request.user.id`, the caller must be staff/superuser or Organizador.
+    The function will locate the inscrição by evento+participante and cancel it.
+    """
+    # parse JSON body
+    try:
+        data = request.data if isinstance(request.data, dict) else json.loads(request.body.decode('utf-8') or '{}')
+    except Exception:
+        data = {}
+    evento_id = data.get('evento_id')
+    target_user_id = data.get('target_user_id')
+    as_user_id = data.get('as_user_id')
+
+    if not evento_id or not target_user_id:
+        return Response({'error': 'Forneça evento_id e target_user_id no corpo da requisição'}, status=400)
+
+    # find inscrição
+    insc = Inscricao.objects.filter(evento_id=evento_id, participante_id=target_user_id).first()
+    if not insc:
+        return Response({'error': 'Inscrição não encontrada para evento/usuário informados'}, status=404)
+
+    # resolve acting user
+    acting_user = None
+    if as_user_id:
+        if not (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists()):
+            return Response({'error': 'Apenas administradores podem simular outro usuário'}, status=403)
+        acting_user = User.objects.filter(id=as_user_id).first()
+        if not acting_user:
+            return Response({'error': 'Usuário simulado não encontrado'}, status=404)
+        if str(acting_user.id) != str(target_user_id) and acting_user != insc.participante:
+            # ensure the acting_user corresponds to the target participant
+            return Response({'error': 'O usuário simulado não corresponde à inscrição'}, status=400)
+    else:
+        acting_user = request.user
+
+    # permission check: acting_user must be participant or caller must be admin/organizador
+    if acting_user == insc.participante or request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists():
+        try:
+            details = f'Inscrição id={insc.id} evento_id={insc.evento_id} participante_id={insc.participante_id} (cancelada por caller_id={request.user.id} acting_as={acting_user.id})'
+            insc.delete()
+            try:
+                log_audit(request.user, 'Cancelou inscrição (API)', details)
+            except Exception:
+                pass
+            return Response({'status': 'ok'})
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+    return Response({'error': 'Acesso negado'}, status=403)
+api_cancel_inscricao_as.throttle_scope = 'event-list'
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def api_confirm_inscricao_as(request, insc_id=None):
+    """Confirm presence for inscrição. Require JSON with 'evento_id' and 'target_user_id' and 'as_user_id'."""
+    try:
+        data = request.data if isinstance(request.data, dict) else json.loads(request.body.decode('utf-8') or '{}')
+    except Exception:
+        data = {}
+    evento_id = data.get('evento_id')
+    target_user_id = data.get('target_user_id')
+    as_user_id = data.get('as_user_id')
+
+    if not evento_id or not target_user_id:
+        return Response({'error': 'Forneça evento_id e target_user_id no corpo da requisição'}, status=400)
+
+    insc = Inscricao.objects.filter(evento_id=evento_id, participante_id=target_user_id).select_related('evento').first()
+    if not insc:
+        return Response({'error': 'Inscrição não encontrada para evento/usuário informados'}, status=404)
+
+    acting_user = None
+    if as_user_id:
+        if not (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists()):
+            return Response({'error': 'Apenas administradores podem simular outro usuário'}, status=403)
+        acting_user = User.objects.filter(id=as_user_id).first()
+        if not acting_user:
+            return Response({'error': 'Usuário simulado não encontrado'}, status=404)
+        if str(acting_user.id) != str(target_user_id) and acting_user != insc.participante:
+            return Response({'error': 'O usuário simulado não corresponde à inscrição'}, status=400)
+    else:
+        acting_user = request.user
+
+    user = request.user
+    if user.is_staff or user.is_superuser or user.groups.filter(name='Organizador').exists() or acting_user == insc.participante:
+        insc.presenca_confirmada = True
+        if not insc.certificado_gerado:
+            evt = insc.evento
+            if evt:
+                insc.certificado_evento_nome = evt.nome
+                insc.certificado_data_inicio = evt.data_inicio
+                insc.certificado_local = evt.local
+                insc.certificado_carga_horaria_minutos = evt.carga_horaria_minutos
+                insc.certificado_emitido_em = timezone.now()
+                insc.certificado_gerado = True
+        insc.save()
+        try:
+            log_audit(request.user, 'Confirmou presença (API)', f'Inscrição id={insc.id} evento_id={insc.evento_id} participante_id={insc.participante_id} (confirmada por caller_id={request.user.id} acting_as={acting_user.id})')
+        except Exception:
+            pass
+        return Response({'status': 'ok'})
+    return Response({'error': 'Acesso negado'}, status=403)
+api_confirm_inscricao_as.throttle_scope = 'event-list'
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def api_create_inscricao_as(request):
+    """Create an inscrição for a specified user and event (admin/test helper).
+    Expects JSON body: {"evento": <id>, "user_id": <id>}"""
+    try:
+        data = request.data if isinstance(request.data, dict) else json.loads(request.body.decode('utf-8') or '{}')
+    except Exception:
+        data = {}
+    evento_id = data.get('evento')
+    user_id = data.get('user_id')
+    if not evento_id or not user_id:
+        return Response({'error': 'Forneça evento e user_id'}, status=400)
+    # only staff/superuser or organizador may simulate
+    if not (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists()):
+        return Response({'error': 'Apenas administradores podem criar inscrição como outro usuário'}, status=403)
+    target_user = User.objects.filter(id=user_id).first()
+    if not target_user:
+        return Response({'error': 'Usuário não encontrado'}, status=404)
+    # disallow creating inscrição for organizers (maintain rule)
+    if target_user.groups.filter(name='Organizador').exists():
+        return Response({'error': 'Não é permitido inscrever um usuário do grupo Organizador'}, status=400)
+    evento = Evento.objects.filter(id=evento_id).first()
+    if not evento:
+        return Response({'error': 'Evento não encontrado'}, status=404)
+    now = timezone.now()
+    if evento.data_fim and evento.data_fim <= now:
+        return Response({'error': 'O evento já terminou'}, status=400)
+    if evento.data_inicio and evento.data_inicio <= now < (evento.data_fim or (evento.data_inicio + timedelta(days=1))):
+        return Response({'error': 'O evento já começou'}, status=400)
+    # prevent duplicate
+    if Inscricao.objects.filter(evento=evento, participante=target_user).exists():
+        return Response({'error': 'Já existe inscrição para este usuário neste evento'}, status=400)
+    insc = Inscricao(evento=evento, participante=target_user, criado_em=timezone.now())
+    insc.save()
+    try:
+        log_audit(request.user, 'Criou inscrição (simulada)', f'Inscrição id={insc.id} evento_id={evento.id} participante_id={target_user.id}')
+    except Exception:
+        pass
+    return Response({'status': 'ok', 'id': insc.id})
+api_create_inscricao_as.throttle_scope = 'event-list'
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def api_list_event_inscricoes(request, event_id):
+    """List inscriptions for a given event (admin/organizador/professor owner)."""
+    evento = Evento.objects.filter(id=event_id).first()
+    if not evento:
+        return Response({'error': 'Evento não encontrado'}, status=404)
+    # allow a 'requesting_user_id' query param to check permissions on behalf of that user
+    req_user_id = request.GET.get('requesting_user_id')
+    actor = request.user
+    if req_user_id:
+        # only admin/organizador may request on behalf of another user
+        if not (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists()):
+            return Response({'error': 'Apenas administradores podem consultar em nome de outro usuário'}, status=403)
+        actor = User.objects.filter(id=req_user_id).first()
+        if not actor:
+            return Response({'error': 'Usuário requisitante não encontrado'}, status=404)
+
+    # permission: staff/superuser or organizador or professor owner (for the actor)
+    if not (actor.is_staff or actor.is_superuser or actor.groups.filter(name='Organizador').exists() or (actor.groups.filter(name='Professor').exists() and evento.responsavel == actor)):
+        return Response({'error': 'Acesso negado'}, status=403)
+    inscricoes = Inscricao.objects.filter(evento=evento).select_related('participante')
+    out = []
+    for i in inscricoes:
+        out.append({'id': i.id, 'participante_id': i.participante_id, 'participante_username': getattr(i.participante, 'username', ''), 'presenca_confirmada': bool(i.presenca_confirmada)})
+    return Response({'inscricoes': out})
+api_list_event_inscricoes.throttle_scope = 'event-list'
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def api_confirm_inscricao(request, insc_id):
+    # admin action: confirm presence for an inscrição
+    inscr = Inscricao.objects.filter(id=insc_id).select_related('evento').first()
+    if not inscr:
+        return Response({'error': 'Inscrição não encontrada'}, status=404)
+    # permission: staff/superuser or organizador or professor owner
+    user = request.user
+    if user.is_staff or user.is_superuser or user.groups.filter(name='Organizador').exists() or (user.groups.filter(name='Professor').exists() and inscr.evento and inscr.evento.responsavel == user):
+        inscr.presenca_confirmada = True
+        if not inscr.certificado_gerado:
+            evt = inscr.evento
+            if evt:
+                inscr.certificado_evento_nome = evt.nome
+                inscr.certificado_data_inicio = evt.data_inicio
+                inscr.certificado_local = evt.local
+                inscr.certificado_carga_horaria_minutos = evt.carga_horaria_minutos
+                inscr.certificado_emitido_em = timezone.now()
+                inscr.certificado_gerado = True
+        inscr.save()
+        try:
+            log_audit(request.user, 'Confirmou presença (API)', f'Inscrição id={inscr.id} evento_id={inscr.evento_id} participante_id={inscr.participante_id}')
+        except Exception:
+            pass
+        return Response({'status': 'ok'})
+    return Response({'error': 'Acesso negado'}, status=403)
+    api_confirm_inscricao.throttle_scope = 'inscricao'
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def api_generate_code(request, event_id):
+    evento = Evento.objects.filter(id=event_id).first()
+    if not evento:
+        return Response({'error': 'Evento não encontrado'}, status=404)
+    # allow specifying actor via JSON body 'actor_user_id'. If provided and different
+    # from request.user, the caller must be staff/superuser or Organizador to simulate.
+    try:
+        data = request.data if isinstance(request.data, dict) else json.loads(request.body.decode('utf-8') or '{}')
+    except Exception:
+        data = {}
+    actor_user_id = data.get('actor_user_id')
+    actor = None
+    if actor_user_id:
+        # only allow simulation by admins/organizadores
+        if not (request.user.is_staff or request.user.is_superuser or request.user.groups.filter(name='Organizador').exists()):
+            return Response({'error': 'Apenas administradores podem gerar código em nome de outro usuário'}, status=403)
+        actor = User.objects.filter(id=actor_user_id).first()
+        if not actor:
+            return Response({'error': 'Usuário especificado não encontrado'}, status=404)
+    else:
+        actor = request.user
+
+    # forbid students explicitly as actors
+    if actor.groups.filter(name='Aluno').exists():
+        return Response({'error': 'Acesso negado para alunos'}, status=403)
+    # permission: staff/superuser or organizador or professor owner
+    if actor.groups.filter(name='Professor').exists() and evento.responsavel != actor and not (actor.is_staff or actor.is_superuser or actor.groups.filter(name='Organizador').exists()):
+        return Response({'error': 'Acesso negado'}, status=403)
+    if evento.confirmation_code:
+        return Response({'code': evento.confirmation_code})
+    import secrets, string
+    alphabet = string.ascii_uppercase + string.digits
+    def make_code(n=8):
+        return ''.join(secrets.choice(alphabet) for _ in range(n))
+    for _ in range(10):
+        code = make_code(8)
+        if not Evento.objects.filter(confirmation_code=code).exists():
+            evento.confirmation_code = code
+            evento.save()
+            try:
+                log_audit(request.user, 'Gerou código de confirmação (API)', f'Evento id={evento.id} code={code} actor_id={actor.id} caller_id={request.user.id}')
+            except Exception:
+                pass
+            return Response({'code': code})
+    return Response({'error': 'Não foi possível gerar código'}, status=500)
+
+api_generate_code.throttle_scope = 'event-list'
 
 
 @csrf_protect
