@@ -34,7 +34,7 @@
   </div>
 </body>
   <script>
-// CSRF helper
+// helper para obter cookie CSRF
 function getCookie(name){
   const v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
   return v ? v.pop() : '';
@@ -68,10 +68,10 @@ function getCookie(name){
       else if(j.new_id){ window.location = '/verify/'+j.new_id+'/'; }
       else { startCooldown(30); }
     }).catch(()=>{ alert('Falha ao reenviar'); btn.disabled=false; timerEl.textContent=''; });
-    // force minimal cooldown UI while awaiting response
+    // mostra cooldown mínimo enquanto aguarda resposta
     startCooldown(30);
   });
-  // start initial cooldown when server indicates remaining_seconds
+  // inicia cooldown inicial se o servidor indicou `remaining_seconds`
   (function(){
     try{
       var initial = Number({{ remaining_seconds|default:0 }} || 0);
