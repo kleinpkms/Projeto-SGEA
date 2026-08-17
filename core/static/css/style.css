@@ -12,7 +12,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
-	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	font-family: Ink Free, sans-serif;
 	background-color: var(--bg-color);
 	margin: 0;
 	color: var(--text-color);
